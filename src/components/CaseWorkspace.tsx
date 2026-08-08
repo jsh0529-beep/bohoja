@@ -11,6 +11,7 @@ import {Shell} from '@/components/Shell';
 import {Icon,IconName} from '@/components/Icon';
 import {ComfortSpace} from '@/components/ComfortSpace';
 import {LocalOcr} from '@/components/LocalOcr';
+import {HospitalSupplies} from '@/components/HospitalSupplies';
 
 type Role='OWNER'|'MANAGER'|'CAREGIVER'|'VIEWER';
 type CareCase={id:string;patientAlias:string;relationship:string;hospital?:string;consented:boolean;aiConsented?:boolean;createdAt:string;role:Role};
@@ -64,9 +65,10 @@ function Workspace({section}:{section:string}){
   useEffect(()=>{void loadCases();},[loadCases]);
   useEffect(()=>{if(caseId){sessionStorage.setItem('guardian_active_case',caseId);void refresh();}},[caseId,refresh]);
 
-  const standalone=['billing','payment','pricing','settings','legal','notices','admin','more','comfort'].includes(section);
+  const standalone=['billing','payment','pricing','settings','legal','notices','admin','more','comfort','supplies'].includes(section);
   let body:React.ReactNode;
   if(section==='comfort')body=<ComfortSpace/>;
+  else if(section==='supplies')body=<HospitalSupplies/>;
   else if(section==='legal'||section==='notices')body=<LegalPanel/>;
   else if(section==='admin')body=<AdminPanel/>;
   else if(section==='billing'||section==='payment'||section==='pricing')body=<Billing/>;
@@ -107,6 +109,7 @@ function Dashboard({data}:{data:Overview}){
     <div className="card"><div className="row"><h3>최근 교대 브리핑</h3><Link href="/handoff">브리핑 쓰기</Link></div>{latestHandoff?<><p>{text(latestHandoff.data.status)||text(latestHandoff.data.summary)||'내용을 확인해 주세요.'}</p><small className="sub">{latestHandoff.authorName} · {formatDate(latestHandoff.createdAt)}</small></>:<p className="sub">아직 전달된 브리핑이 없습니다.</p>}</div>
     <h2 className="section-title">빠른 실행</h2><div className="grid two quick-grid"><Link className="quick-action" href="/documents"><Icon name="camera"/><span>사진 글자 추출</span></Link><Link className="quick-action" href="/records"><Icon name="record"/><span>돌봄 기록</span></Link><Link className="quick-action" href="/questions"><Icon name="question"/><span>회진 질문</span></Link><Link className="quick-action" href="/discharge"><Icon name="discharge"/><span>퇴원 준비</span></Link></div>
     <Link className="comfort-teaser" href="/comfort"><span className="comfort-teaser-icon"><Icon name="heart"/></span><div><small>기다리는 마음도 돌봐주세요</small><strong>마음쉼터에서 잠시 숨을 고르기</strong></div><span className="chevron">›</span></Link>
+    <Link className="supplies-teaser" href="/supplies"><span><Icon name="shopping"/></span><div><small>병원별 제공품을 먼저 확인해요</small><strong>입원 생활 준비물 살펴보기</strong></div><span className="chevron">›</span></Link>
     <h2 className="section-title">새 알림</h2>{data.notifications.length?<ul className="list">{data.notifications.slice(0,5).map(item=><li key={item.id}><b>{notificationLabel[item.category]||'보호자노트 소식'}</b><br/><small className="sub">{formatDate(item.createdAt)}</small></li>)}</ul>:<Empty text="새 알림이 없습니다."/>}
     <h2 className="section-title">최근 가족 활동</h2>{data.records.length?<ul className="list">{data.records.slice(0,5).map(item=><li key={item.id}><b>{item.authorName}</b> · {recordLabel[item.kind]||item.kind}<br/><small className="sub">{formatDate(item.createdAt)}</small></li>)}</ul>:<Empty text="첫 돌봄 기록을 남겨 보세요."/>}
   </>;
@@ -167,7 +170,7 @@ function Discharge({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
 }
 
 function Billing(){
-  return <><h1>무료 이용 안내</h1><div className="card plan-card"><div className="plan-icon"><Icon name="heart" size={28}/></div><span className="pill">모든 보호자에게</span><h2>보호자노트 무료</h2><div className="metric">0원</div><p className="sub">가족 공유 · 돌봄 기록 · 사진 글자 추출 · 퇴원 PDF를 제한 없이 이용하세요.</p><Link className="btn full" href="/dashboard">내 돌봄방으로 가기</Link></div><div className="notice">광고는 공개 안내 화면에만 표시합니다. 환자 정보가 있는 돌봄방, 저장 문서, 가족 기록과 마음쉼터에는 광고를 표시하지 않습니다.</div></>;
+  return <><h1>무료 이용 안내</h1><div className="card plan-card"><div className="plan-icon"><Icon name="heart" size={28}/></div><span className="pill">모든 보호자에게</span><h2>보호자노트 무료</h2><div className="metric">0원</div><p className="sub">가족 공유 · 돌봄 기록 · 사진 글자 추출 · 퇴원 PDF를 제한 없이 이용하세요.</p><Link className="btn full" href="/dashboard">내 돌봄방으로 가기</Link></div><div className="notice">운영비는 선택적으로 이용하는 입원 준비물 제휴 링크로 보조합니다. 구매하지 않아도 모든 기능을 동일하게 이용할 수 있습니다.</div></>;
 }
 
 function Settings(){
@@ -178,7 +181,7 @@ function Settings(){
   return <><h1>설정</h1><h2 className="section-title">알림 동의</h2>{channels.map(([channel,label])=><label className="check" key={channel}><input type="checkbox" checked={preferences[channel]??false} onChange={event=>void update(channel,event.target.checked)}/><span>{label}<small>변경 즉시 반영됩니다</small></span></label>)}<h2 className="section-title">내 정보</h2><div className="grid"><a className="btn secondary" href="/api/privacy/export">내 데이터 내려받기</a><button className="btn danger" onClick={async()=>{if(confirm('탈퇴를 요청할까요? 공유가 즉시 중단됩니다.'))await json('/api/privacy/delete',{method:'POST',body:'{}'});}}>계정 탈퇴 요청</button></div></>;
 }
 
-const moreItems:Array<[string,string,IconName]>=[['마음쉼터','comfort','heart'],['교대 브리핑','handoff','handoff'],['회진 질문','questions','question'],['비용 정산','expenses','expense'],['퇴원 준비','discharge','discharge'],['무료 이용 안내','billing','sparkles'],['공지·법정 문서','legal','document'],['설정·탈퇴','settings','settings']];
+const moreItems:Array<[string,string,IconName]>=[['마음쉼터','comfort','heart'],['입원 준비물','supplies','shopping'],['교대 브리핑','handoff','handoff'],['회진 질문','questions','question'],['비용 정산','expenses','expense'],['퇴원 준비','discharge','discharge'],['무료 이용 안내','billing','sparkles'],['공지·법정 문서','legal','document'],['설정·탈퇴','settings','settings']];
 function More(){return <><h1>더보기</h1><div className="grid more-grid">{moreItems.map(([label,path,icon])=><Link className="card row" href={`/${path}`} key={path}><span className="menu-icon"><Icon name={icon}/></span><b>{label}</b><span className="chevron">›</span></Link>)}</div></>}
 function Writable({data,children}:{data:Overview;children:React.ReactNode}){return data.case.role!=='VIEWER'&&data.case.consented?<>{children}</>:<div className="notice">이 돌봄방에서는 열람만 할 수 있습니다.</div>}
 function Empty({text:message}:{text:string}){return <div className="empty"><span className="empty-icon"><Icon name="sparkles"/></span><p className="sub">{message}</p></div>}

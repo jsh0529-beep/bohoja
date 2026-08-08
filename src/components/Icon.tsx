@@ -1,4 +1,4 @@
-export type IconName='home'|'record'|'document'|'family'|'more'|'settings'|'calendar'|'handoff'|'question'|'expense'|'discharge'|'shield'|'sparkles'|'heart'|'camera';
+export type IconName='home'|'record'|'document'|'family'|'more'|'settings'|'calendar'|'handoff'|'question'|'expense'|'discharge'|'shield'|'sparkles'|'heart'|'camera'|'shopping';
 
 export function Icon({name,size=22,className=''}:{name:IconName,size?:number,className?:string}){
   const common={width:size,height:size,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:1.9,strokeLinecap:'round' as const,strokeLinejoin:'round' as const,'aria-hidden':true,className};
@@ -18,6 +18,7 @@ export function Icon({name,size=22,className=''}:{name:IconName,size?:number,cla
     sparkles:<><path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3L12 3ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14ZM19 13l.7 1.8 1.8.7-1.8.7L19 18l-.7-1.8-1.8-.7 1.8-.7L19 13Z"/></>,
     heart:<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/>,
     camera:<><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></>,
+    shopping:<><path d="M6 8h12l1 13H5L6 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3M8 13h8"/></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
