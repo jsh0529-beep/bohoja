@@ -1,0 +1,861 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETION_PENDING
+  DELETED
+}
+
+enum CaseRole {
+  OWNER
+  CO_ADMIN
+  CAREGIVER
+  VIEWER
+}
+
+enum CaseStatus {
+  ACTIVE
+  ENDED
+  DELETION_PENDING
+  DELETED
+}
+
+enum ConsentStatus {
+  GRANTED
+  WITHDRAWN
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  NEEDS_REVIEW
+  CONFIRMED
+  FAILED
+  DELETION_PENDING
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  NEEDS_REVIEW
+  CONFIRMED
+  FAILED
+}
+
+enum TaskStatus {
+  TODO
+  DOING
+  DONE
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PublicationStatus {
+  DRAFT
+  IN_REVIEW
+  SCHEDULED
+  PUBLISHED
+  SUPERSEDED
+  WITHDRAWN
+}
+
+enum RequestStatus {
+  RECEIVED
+  IN_REVIEW
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id                      String                   @id @default(cuid())
+  isAdmin                 Boolean                  @default(false)
+  status                  UserStatus               @default(ACTIVE)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  deletedAt               DateTime?
+  profile                 UserProfile?
+  identities              UserIdentity[]
+  statusHistory           UserStatusHistory[]
+  agreements              UserAgreement[]
+  marketingConsents       MarketingConsent[]
+  memberships             CaseMember[]
+  createdCases            PatientCase[]            @relation("CaseCreator")
+  subscriptions           Subscription[]
+  auditLogs               AuditLog[]               @relation("AuditActor")
+  privacyRequests         PrivacyRequest[]
+  notificationPreferences NotificationPreference[]
+  notifications           Notification[]
+  caseConsents            CaseConsent[]
+  credential              UserCredential?
+  sessions                AuthSession[]
+  verificationChallenges  VerificationChallenge[]
+}
+
+model UserCredential {
+  userId       String    @id
+  email        String    @unique
+  passwordHash String
+  verifiedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model VerificationChallenge {
+  id        String    @id @default(cuid())
+  userId    String
+  purpose   String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model UserProfile {
+  userId            String   @id
+  displayName       String
+  over14ConfirmedAt DateTime
+  locale            String   @default("ko-KR")
+  timezone          String   @default("Asia/Seoul")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserIdentity {
+  id              String    @id @default(cuid())
+  userId          String
+  provider        String
+  providerSubject String
+  verifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+}
+
+model UserStatusHistory {
+  id         String      @id @default(cuid())
+  userId     String
+  fromStatus UserStatus?
+  toStatus   UserStatus
+  reasonCode String?
+  createdAt  DateTime    @default(now())
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model LegalDocument {
+  id        String                 @id @default(cuid())
+  type      String                 @unique
+  title     String
+  required  Boolean                @default(false)
+  createdAt DateTime               @default(now())
+  versions  LegalDocumentVersion[]
+}
+
+model LegalDocumentVersion {
+  id                  String            @id @default(cuid())
+  legalDocumentId     String
+  version             String
+  locale              String            @default("ko-KR")
+  bodyMd              String
+  bodySha256          String
+  effectiveAt         DateTime
+  publishedAt         DateTime?
+  status              PublicationStatus @default(DRAFT)
+  requiresReagreement Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  legalDocument       LegalDocument     @relation(fields: [legalDocumentId], references: [id], onDelete: Restrict)
+  agreements          UserAgreement[]
+  caseConsents        CaseConsent[]
+  partnerLeads        PartnerLead[]
+
+  @@unique([legalDocumentId, version, locale])
+  @@index([status, publishedAt])
+}
+
+model UserAgreement {
+  id                  String               @id @default(cuid())
+  userId              String
+  versionId           String
+  status              ConsentStatus        @default(GRANTED)
+  presentedBodySha256 String
+  channel             String
+  agreedAt            DateTime
+  withdrawnAt         DateTime?
+  evidenceJson        Json?
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  version             LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, versionId])
+  @@index([userId, agreedAt])
+}
+
+model MarketingConsent {
+  id         String   @id @default(cuid())
+  userId     String
+  channel    String
+  granted    Boolean
+  version    String
+  occurredAt DateTime @default(now())
+  source     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, channel, occurredAt])
+}
+
+model PatientCase {
+  id                  String             @id @default(cuid())
+  alias               String
+  relationship        String
+  admittedOn          DateTime?
+  expectedDischargeOn DateTime?
+  hospitalName        String?
+  ward                String?
+  status              CaseStatus         @default(ACTIVE)
+  createdById         String
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+  purgeAfter          DateTime?
+  createdBy           User               @relation("CaseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  consents            CaseConsent[]
+  members             CaseMember[]
+  invitations         Invitation[]
+  documents           SourceDocument[]
+  events              Event[]
+  tasks               Task[]
+  careLogs            CareLog[]
+  handoffs            HandoffReport[]
+  questions           RoundingQuestion[]
+  expenses            Expense[]
+  dischargePlans      DischargePlan[]
+  attachments         Attachment[]
+  partnerLeads        PartnerLead[]
+
+  @@index([createdById, status])
+  @@index([status, purgeAfter])
+}
+
+model CaseConsent {
+  id             String               @id @default(cuid())
+  caseId         String
+  userId         String
+  kind           String
+  authorityBasis String?
+  versionId      String
+  status         ConsentStatus        @default(GRANTED)
+  agreedAt       DateTime
+  withdrawnAt    DateTime?
+  evidenceJson   Json?
+  patientCase    PatientCase          @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  version        LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, status])
+  @@index([userId, agreedAt])
+}
+
+model CaseMember {
+  id          String      @id @default(cuid())
+  caseId      String
+  userId      String
+  role        CaseRole
+  joinedAt    DateTime    @default(now())
+  revokedAt   DateTime?
+  patientCase PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([caseId, userId])
+  @@index([userId, revokedAt])
+}
+
+model Invitation {
+  id           String      @id @default(cuid())
+  caseId       String
+  inviterId    String
+  role         CaseRole
+  inviteeEmail String
+  tokenHash    String      @unique
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  revokedAt    DateTime?
+  createdAt    DateTime    @default(now())
+  patientCase  PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, expiresAt])
+  @@index([acceptedById])
+}
+
+model SourceDocument {
+  id             String          @id @default(cuid())
+  caseId         String
+  uploadedById   String
+  kind           String
+  originalName   String
+  mimeType       String
+  byteSize       Int
+  storageKey     String          @unique
+  sha256         String
+  status         DocumentStatus  @default(UPLOADED)
+  pageCount      Int?
+  createdAt      DateTime        @default(now())
+  confirmedAt    DateTime?
+  deletedAt      DateTime?
+  patientCase    PatientCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  pages          DocumentPage[]
+  extractionJobs ExtractionJob[]
+  events         Event[]
+  tasks          Task[]
+  attachments    Attachment[]
+
+  @@index([caseId, createdAt])
+  @@index([caseId, status])
+}
+
+model DocumentPage {
+  id               String           @id @default(cuid())
+  sourceDocumentId String
+  pageNumber       Int
+  storageKey       String?
+  width            Int?
+  height           Int?
+  sourceDocument   SourceDocument   @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  extractedFields  ExtractedField[]
+
+  @@unique([sourceDocumentId, pageNumber])
+}
+
+model ExtractionJob {
+  id               String           @id @default(cuid())
+  sourceDocumentId String
+  provider         String
+  model            String
+  promptVersion    String
+  schemaVersion    String
+  status           JobStatus        @default(QUEUED)
+  attempt          Int              @default(0)
+  errorCode        String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  confirmedAt      DateTime?
+  confirmedById    String?
+  createdAt        DateTime         @default(now())
+  sourceDocument   SourceDocument   @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  fields           ExtractedField[]
+
+  @@index([sourceDocumentId, status])
+}
+
+model ExtractedField {
+  id              String        @id @default(cuid())
+  extractionJobId String
+  documentPageId  String?
+  fieldName       String
+  valueJson       Json
+  originalText    String?
+  confidence      Float?
+  evidenceJson    Json?
+  extractionJob   ExtractionJob @relation(fields: [extractionJobId], references: [id], onDelete: Cascade)
+  documentPage    DocumentPage? @relation(fields: [documentPageId], references: [id], onDelete: SetNull)
+
+  @@index([extractionJobId, fieldName])
+}
+
+model Event {
+  id               String          @id @default(cuid())
+  caseId           String
+  sourceDocumentId String?
+  title            String
+  startsAt         DateTime
+  endsAt           DateTime?
+  location         String?
+  important        Boolean         @default(false)
+  createdById      String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  patientCase      PatientCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, startsAt])
+}
+
+model Task {
+  id               String          @id @default(cuid())
+  caseId           String
+  sourceDocumentId String?
+  title            String
+  description      String?
+  status           TaskStatus      @default(TODO)
+  priority         Int             @default(2)
+  dueAt            DateTime?
+  assigneeId       String?
+  createdById      String
+  completedById    String?
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  patientCase      PatientCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, status, dueAt])
+  @@index([assigneeId, status])
+}
+
+model CareLog {
+  id             String      @id @default(cuid())
+  caseId         String
+  authorId       String
+  recordedAt     DateTime    @default(now())
+  meal           String?
+  sleep          String?
+  bowelMovement  String?
+  mobility       String?
+  reportedPain   Int?
+  mood           String?
+  neededItems    String?
+  heardFromStaff String?
+  note           String?
+  createdAt      DateTime    @default(now())
+  patientCase    PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, recordedAt])
+}
+
+model HandoffReport {
+  id               String                   @id @default(cuid())
+  caseId           String
+  authorId         String
+  recipientId      String?
+  contentJson      Json
+  periodStart      DateTime
+  periodEnd        DateTime
+  createdAt        DateTime                 @default(now())
+  patientCase      PatientCase              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  acknowledgements HandoffAcknowledgement[]
+
+  @@index([caseId, createdAt])
+}
+
+model HandoffAcknowledgement {
+  id              String        @id @default(cuid())
+  handoffReportId String
+  userId          String
+  acknowledgedAt  DateTime      @default(now())
+  handoffReport   HandoffReport @relation(fields: [handoffReportId], references: [id], onDelete: Cascade)
+
+  @@unique([handoffReportId, userId])
+}
+
+model RoundingQuestion {
+  id                 String      @id @default(cuid())
+  caseId             String
+  authorId           String
+  question           String
+  answer             String?
+  answerRecordedById String?
+  priority           Int         @default(2)
+  answeredAt         DateTime?
+  createdAt          DateTime    @default(now())
+  patientCase        PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, answeredAt])
+}
+
+model Expense {
+  id                String         @id @default(cuid())
+  caseId            String
+  paidById          String
+  title             String
+  amountKrw         Int
+  occurredAt        DateTime
+  receiptStorageKey String?
+  createdAt         DateTime       @default(now())
+  patientCase       PatientCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  splits            ExpenseSplit[]
+
+  @@index([caseId, occurredAt])
+}
+
+model ExpenseSplit {
+  id        String    @id @default(cuid())
+  expenseId String
+  userId    String
+  amountKrw Int
+  settledAt DateTime?
+  expense   Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, userId])
+}
+
+model DischargePlan {
+  id                  String          @id @default(cuid())
+  caseId              String
+  expectedDischargeOn DateTime?
+  startedAt           DateTime        @default(now())
+  completedAt         DateTime?
+  patientCase         PatientCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  items               DischargeItem[]
+
+  @@index([caseId, startedAt])
+}
+
+model DischargeItem {
+  id              String        @id @default(cuid())
+  dischargePlanId String
+  phase           String
+  title           String
+  assigneeId      String?
+  completedById   String?
+  completedAt     DateTime?
+  sortOrder       Int           @default(0)
+  dischargePlan   DischargePlan @relation(fields: [dischargePlanId], references: [id], onDelete: Cascade)
+
+  @@index([dischargePlanId, phase, sortOrder])
+}
+
+model Attachment {
+  id               String          @id @default(cuid())
+  caseId           String
+  sourceDocumentId String?
+  ownerType        String
+  ownerId          String
+  storageKey       String          @unique
+  mimeType         String
+  byteSize         Int
+  sha256           String
+  createdAt        DateTime        @default(now())
+  deletedAt        DateTime?
+  patientCase      PatientCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, ownerType, ownerId])
+}
+
+model NotificationPreference {
+  id                   String   @id @default(cuid())
+  userId               String
+  channel              String
+  transactionalEnabled Boolean  @default(true)
+  marketingEnabled     Boolean  @default(false)
+  quietHoursJson       Json?
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel])
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  userId      String
+  category    String
+  channel     String
+  templateKey String
+  status      NotificationStatus @default(QUEUED)
+  dedupeKey   String?            @unique
+  scheduledAt DateTime
+  sentAt      DateTime?
+  errorCode   String?
+  createdAt   DateTime           @default(now())
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt])
+}
+
+model Plan {
+  id                String         @id @default(cuid())
+  code              String         @unique
+  name              String
+  priceKrw          Int
+  billingPeriodDays Int?
+  benefitsJson      Json
+  active            Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  subscriptions     Subscription[]
+  coupons           Coupon[]
+}
+
+model Subscription {
+  id                      String             @id @default(cuid())
+  userId                  String
+  planId                  String
+  status                  SubscriptionStatus @default(PENDING)
+  provider                String
+  providerCustomerRef     String?
+  providerSubscriptionRef String?
+  startsAt                DateTime?
+  endsAt                  DateTime?
+  cancelledAt             DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  user                    User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan                    Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  paymentEvents           PaymentEvent[]
+
+  @@unique([provider, providerSubscriptionRef])
+  @@index([userId, status])
+}
+
+model PaymentEvent {
+  id              String        @id @default(cuid())
+  subscriptionId  String?
+  provider        String
+  providerEventId String
+  type            String
+  status          PaymentStatus
+  amountKrw       Int
+  currency        String        @default("KRW")
+  occurredAt      DateTime
+  rawReference    String?
+  createdAt       DateTime      @default(now())
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([subscriptionId, occurredAt])
+}
+
+model Coupon {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  planId         String?
+  discountType   String
+  discountValue  Int
+  startsAt       DateTime?
+  endsAt         DateTime?
+  maxRedemptions Int?
+  active         Boolean   @default(true)
+  plan           Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+}
+
+model PartnerService {
+  id         String        @id @default(cuid())
+  name       String
+  category   String
+  regions    Json
+  disclosure String        @default("?쒗쑕")
+  formSchema Json
+  active     Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  leads      PartnerLead[]
+}
+
+model PartnerLead {
+  id               String               @id @default(cuid())
+  caseId           String
+  userId           String
+  partnerServiceId String
+  consentVersionId String
+  encryptedPayload String
+  status           String               @default("RECEIVED")
+  submittedAt      DateTime             @default(now())
+  patientCase      PatientCase          @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  partnerService   PartnerService       @relation(fields: [partnerServiceId], references: [id], onDelete: Restrict)
+  consentVersion   LegalDocumentVersion @relation(fields: [consentVersionId], references: [id], onDelete: Restrict)
+
+  @@index([partnerServiceId, status, submittedAt])
+  @@index([caseId, submittedAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorType   String
+  action      String
+  targetType  String
+  targetId    String
+  caseId      String?
+  beforeJson  Json?
+  afterJson   Json?
+  requestId   String?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, createdAt])
+  @@index([targetType, targetId, createdAt])
+}
+
+model PrivacyRequest {
+  id            String                 @id @default(cuid())
+  requestNumber String                 @unique
+  userId        String
+  type          String
+  status        RequestStatus          @default(RECEIVED)
+  dueAt         DateTime
+  resultSummary String?
+  createdAt     DateTime               @default(now())
+  completedAt   DateTime?
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  actions       PrivacyRequestAction[]
+
+  @@index([status, dueAt])
+}
+
+model PrivacyRequestAction {
+  id               String         @id @default(cuid())
+  privacyRequestId String
+  actorUserId      String?
+  action           String
+  note             String?
+  createdAt        DateTime       @default(now())
+  privacyRequest   PrivacyRequest @relation(fields: [privacyRequestId], references: [id], onDelete: Cascade)
+
+  @@index([privacyRequestId, createdAt])
+}
+
+model ServiceNotice {
+  id                  String                     @id @default(cuid())
+  slug                String
+  version             Int
+  category            String
+  title               String
+  bodyMd              String
+  bodySha256          String
+  status              PublicationStatus          @default(DRAFT)
+  important           Boolean                    @default(false)
+  publishedAt         DateTime?
+  effectiveAt         DateTime?
+  createdAt           DateTime                   @default(now())
+  acknowledgements    NoticeAcknowledgement[]
+  policyNotifications PolicyChangeNotification[]
+
+  @@unique([slug, version])
+  @@index([status, publishedAt])
+}
+
+model NoticeAcknowledgement {
+  id              String        @id @default(cuid())
+  serviceNoticeId String
+  userId          String
+  acknowledgedAt  DateTime      @default(now())
+  serviceNotice   ServiceNotice @relation(fields: [serviceNoticeId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceNoticeId, userId])
+}
+
+model ProcessorAndSubprocessor {
+  id             String    @id @default(cuid())
+  name           String
+  role           String
+  purpose        String
+  country        String?
+  dataCategories Json
+  retention      String
+  reprocessing   Boolean   @default(false)
+  active         Boolean   @default(true)
+  effectiveAt    DateTime
+  endedAt        DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model PolicyChangeNotification {
+  id              String        @id @default(cuid())
+  serviceNoticeId String
+  channel         String
+  audienceFilter  Json
+  scheduledAt     DateTime
+  completedAt     DateTime?
+  successCount    Int           @default(0)
+  failureCount    Int           @default(0)
+  serviceNotice   ServiceNotice @relation(fields: [serviceNoticeId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledAt, completedAt])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String
+  enabled     Boolean  @default(false)
+  rulesJson   Json?
+  updatedAt   DateTime @updatedAt
+}
+
+model AnalyticsEventDefinition {
+  id                   String    @id @default(cuid())
+  name                 String
+  version              Int
+  description          String
+  allowedProperties    Json
+  prohibitedProperties Json
+  active               Boolean   @default(true)
+  reviewedAt           DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@unique([name, version])
+}
+
+/// 로컬·테스트 공급자의 전체 실행 상태를 SQLite에 영속화한다.
+/// 운영 PostgreSQL 전환 시 각 정규화 모델 저장소로 교체한다.
+model RuntimeState {
+  id        String   @id
+  payload   Json
+  updatedAt DateTime @updatedAt
+}
+
+model SecurityThrottle {
+  id           String    @id
+  windowStart  DateTime
+  count        Int       @default(0)
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@index([blockedUntil])
+}
