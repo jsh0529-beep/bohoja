@@ -1,13 +1,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import {Shell} from '@/components/Shell';
+import {Icon,IconName} from '@/components/Icon';
 
 const features = [
-  {number: '01', title: '문서 AI 정리', description: '병원 안내문의 일정과 준비물을 원문과 함께 확인해요.'},
-  {number: '02', title: '가족 교대', description: '가족마다 필요한 권한만 나누고 돌봄 내용을 이어가요.'},
-  {number: '03', title: '퇴원 준비', description: '담당자와 D-Day별 할 일을 체크리스트로 관리해요.'},
-  {number: '04', title: '비용 정산', description: '영수증과 가족별 분담 내역을 한곳에서 정리해요.'},
-];
+  {icon:'document', title: '문서 AI 정리', description: '병원 안내문의 일정과 준비물을 원문과 함께 확인해요.'},
+  {icon:'handoff', title: '가족 교대', description: '가족마다 필요한 권한만 나누고 돌봄 내용을 이어가요.'},
+  {icon:'discharge', title: '퇴원 준비', description: '담당자와 D-Day별 할 일을 체크리스트로 관리해요.'},
+  {icon:'expense', title: '비용 정산', description: '영수증과 가족별 분담 내역을 한곳에서 정리해요.'},
+] satisfies Array<{icon:IconName,title:string,description:string}>;
 
 export default function Home() {
   return (
@@ -56,13 +57,21 @@ export default function Home() {
           </div>
           <div className="feature-grid">
             {features.map((feature) => (
-              <article className="feature-card" key={feature.number}>
-                <span className="feature-number">{feature.number}</span>
+              <article className="feature-card" key={feature.title}>
+                <span className="feature-number"><Icon name={feature.icon}/></span>
                 <h3>{feature.title}</h3>
                 <p>{feature.description}</p>
               </article>
             ))}
           </div>
+        </section>
+
+        <section className="care-flow" aria-label="보호자노트 이용 흐름">
+          <div><span><Icon name="document"/></span><strong>안내문 정리</strong><small>원문을 확인해 저장</small></div>
+          <i aria-hidden="true">→</i>
+          <div><span><Icon name="family"/></span><strong>가족과 공유</strong><small>권한에 맞게 전달</small></div>
+          <i aria-hidden="true">→</i>
+          <div><span><Icon name="discharge"/></span><strong>돌봄 이어가기</strong><small>퇴원까지 놓침 없이</small></div>
         </section>
 
         <section className="privacy-banner">

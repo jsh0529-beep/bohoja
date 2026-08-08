@@ -1,4 +1,4 @@
 import type {Metadata,Viewport} from 'next';import '@fontsource/noto-sans-kr/korean-400.css';import '@fontsource/noto-sans-kr/korean-500.css';import '@fontsource/noto-sans-kr/korean-700.css';import '@fontsource/noto-sans-kr/korean-800.css';import './globals.css';import {PwaRegister} from '@/components/PwaRegister';
-export const metadata:Metadata={title:'보호자노트',description:'가족이 함께 정리하는 입원 돌봄 노트',manifest:'/manifest.webmanifest'};
+export const metadata:Metadata={metadataBase:new URL(process.env.APP_URL??'http://localhost:3000'),title:{default:'보호자노트',template:'%s | 보호자노트'},description:'가족이 함께 정리하는 안전한 입원 돌봄 노트',manifest:'/manifest.webmanifest',applicationName:'보호자노트',openGraph:{title:'보호자노트',description:'보호는 함께, 기록은 간단하게.',type:'website',locale:'ko_KR',images:[{url:'/opengraph-image.jpg',width:1200,height:630,alt:'보호자노트 서비스 소개'}]}};
 export const viewport:Viewport={width:'device-width',initialScale:1,themeColor:'#137a68'};
 export default function Layout({children}:{children:React.ReactNode}){return <html lang="ko"><body><PwaRegister/>{children}</body></html>}
