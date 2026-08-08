@@ -26,7 +26,8 @@ test('사진을 브라우저 안에서 읽고 사진 없이 확인한 텍스트�
   expect((await extracted.inputValue()).trim().length).toBeGreaterThan(0);
   await extracted.fill('입원 안내\n2026년 8월 12일 오전 9시\n본관 2층 원무과');
   await page.getByRole('button',{name:'확인한 텍스트 저장'}).click();
-  await expect(page.getByText('입원 안내.png')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'저장한 문서 1건'})).toBeVisible();
+  await expect(page.getByText('입원 안내.png',{exact:true})).toBeVisible();
 
   const overview=await (await page.request.get(`/api/cases/${caseId}/overview`)).json();
   const document=overview.documents.find((item:{fileName:string})=>item.fileName==='입원 안내.png');
