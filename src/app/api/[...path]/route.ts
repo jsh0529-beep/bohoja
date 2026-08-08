@@ -79,6 +79,18 @@ async function permission(caseId:string,userId:string,mode:'read'|'write'|'manag
   if(!active(member)||!consented(member))return false;
   return mode==='write'?new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN,CaseRole.CAREGIVER]).has(member.role):new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role);
 }
+async function canManageCareLog(caseId:string,userId:string,authorId:string){
+  if(userId===authorId)return Boolean(await permission(caseId,userId,'write'));
+  const member=await membership(caseId,userId);return Boolean(member&&new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role)&&await permission(caseId,userId,'manage'));
+}
+
+const carePatchText=z.union([z.string().trim().max(2000),z.null()]).optional().transform(value=>typeof value==='string'?(value||null):value);
+const careLogPatchSchema=z.object({
+  restore:z.boolean().optional(),recordedAt:z.union([z.coerce.date(),z.null()]).optional(),meal:carePatchText,
+  mealType:z.enum(['조식','중식','석식','간식','해당 없음','BREAKFAST','LUNCH','DINNER','SNACK','NONE']).nullable().optional().transform(value=>(<{[key:string]:string}>{BREAKFAST:'조식',LUNCH:'중식',DINNER:'석식',SNACK:'간식',NONE:'해당 없음'})[value??'']??value),
+  mealAmount:carePatchText,hydration:carePatchText,temperature:z.union([z.coerce.number().min(30).max(45),z.null()]).optional(),pain:z.union([z.coerce.number().int().min(0).max(10),z.null()]).optional(),medication:carePatchText,bowelMovement:carePatchText,sleep:carePatchText,mobility:carePatchText,mood:carePatchText,neededItems:carePatchText,heardFromStaff:carePatchText,note:carePatchText,
+});
+const meaningfulCare=(value:Record<string,unknown>)=>Object.entries(value).some(([key,item])=>!['recordedAt','restore'].includes(key)&&item!==undefined&&item!==null&&item!=='');
 
 async function resolveCaseId(userId:string,mode:'read'|'write'|'manage',requested?:unknown){
   if(typeof requested==='string'&&requested)return await permission(requested,userId,mode)?requested:null;
@@ -98,7 +110,7 @@ async function overview(caseId:string,userId:string){
     prisma.caseMember.findMany({where:{caseId,revokedAt:null},include:{user:{include:{profile:true,credential:true}}}}),
     new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role)?prisma.invitation.findMany({where:{caseId},orderBy:{createdAt:'desc'}}):Promise.resolve([]),
     prisma.sourceDocument.findMany({where:{caseId,deletedAt:null},include:documentInclude,orderBy:{createdAt:'desc'}}),
-    prisma.careLog.findMany({where:{caseId},orderBy:{createdAt:'desc'}}),
+    prisma.careLog.findMany({where:{caseId,deletedAt:null},orderBy:{recordedAt:'desc'}}),
     prisma.handoffReport.findMany({where:{caseId},orderBy:{createdAt:'desc'}}),
     prisma.roundingQuestion.findMany({where:{caseId},orderBy:{createdAt:'desc'}}),
     prisma.expense.findMany({where:{caseId},orderBy:{createdAt:'desc'}}),
@@ -110,7 +122,7 @@ async function overview(caseId:string,userId:string){
   const userIds=new Set<string>();for(const item of [...careLogs,...handoffs,...questions])userIds.add('authorId' in item?item.authorId:'');for(const item of expenses)userIds.add(item.paidById);
   const authors=Object.fromEntries((await prisma.userProfile.findMany({where:{userId:{in:[...userIds].filter(Boolean)}}})).map(item=>[item.userId,item.displayName]));
   const records:any[]=[
-    ...careLogs.map(item=>({id:item.id,kind:'care-logs',data:{recordedAt:item.recordedAt.toISOString(),meal:item.meal,pain:item.reportedPain,bowelMovement:item.bowelMovement,sleep:item.sleep,mobility:item.mobility,mood:item.mood,neededItems:item.neededItems,heardFromStaff:item.heardFromStaff,note:item.note,...((item.detailsJson as Record<string,unknown>|null)??{})},createdAt:item.createdAt.toISOString(),authorName:authors[item.authorId]??'보호자'})),
+    ...careLogs.map(item=>({id:item.id,kind:'care-logs',authorId:item.authorId,canManageRecord:item.authorId===userId||member.role===CaseRole.OWNER||member.role===CaseRole.CO_ADMIN,data:{recordedAt:item.recordedAt.toISOString(),meal:item.meal,pain:item.reportedPain,bowelMovement:item.bowelMovement,sleep:item.sleep,mobility:item.mobility,mood:item.mood,neededItems:item.neededItems,heardFromStaff:item.heardFromStaff,note:item.note,...((item.detailsJson as Record<string,unknown>|null)??{})},createdAt:item.createdAt.toISOString(),updatedAt:item.updatedAt.toISOString(),deletedAt:item.deletedAt?.toISOString(),authorName:authors[item.authorId]??'보호자'})),
     ...handoffs.map(item=>({id:item.id,kind:'handoffs',data:item.contentJson,createdAt:item.createdAt.toISOString(),authorName:authors[item.authorId]??'보호자'})),
     ...questions.map(item=>({id:item.id,kind:'questions',data:{question:item.question,answer:item.answer},createdAt:item.createdAt.toISOString(),authorName:authors[item.authorId]??'보호자'})),
     ...expenses.map(item=>({id:item.id,kind:'expenses',data:{title:item.title,amount:item.amountKrw,split:'가족 균등 분담'},createdAt:item.createdAt.toISOString(),authorName:authors[item.paidById]??'보호자'})),
@@ -203,6 +215,9 @@ async function handlePOST(request:NextRequest,context:RouteContext){
     const changed=await prisma.invitation.updateMany({where:{id:invitation.id,acceptedAt:null,revokedAt:null,expiresAt:{gt:new Date()}},data:{acceptedAt:new Date(),acceptedById:user.id}});if(changed.count!==1)return fail('이미 사용된 초대입니다.',410,'INVITATION_INVALID');await prisma.caseMember.upsert({where:{caseId_userId:{caseId:invitation.caseId,userId:user.id}},update:{role:invitation.role,revokedAt:null},create:{caseId:invitation.caseId,userId:user.id,role:invitation.role}});await audit('invitation_accepted',user.id,invitation.id,invitation.caseId);return ok({caseId:invitation.caseId,role:apiRole(invitation.role)});
   }
   const user=await auth(request);if(isResponse(user))return user;
+  if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]&&path[4]==='restore'){
+    const item=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!item)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(item.caseId,user.id,item.authorId))return fail('이 기록을 복원할 권한이 없습니다.',403,'FORBIDDEN');const updated=await prisma.careLog.update({where:{id:item.id},data:{deletedAt:null}});await audit('care_log_restored',user.id,item.id,item.caseId);return ok({record:{id:updated.id,kind:'care-logs',updatedAt:updated.updatedAt.toISOString(),deletedAt:null}});
+  }
   if(key==='agreements'){
     const value=parsed(z.object({type:z.enum(['terms','privacy','age14','marketing','sensitive','ai_transfer','third_party']),accepted:z.boolean(),version:z.string().default('1.0')}),raw);if(isResponse(value))return value;
     if(value.type==='marketing'){await prisma.marketingConsent.create({data:{userId:user.id,channel:'email',granted:value.accepted,version:value.version,source:'settings'}});return ok({agreement:{type:value.type,accepted:value.accepted,at:new Date().toISOString()}},201);}
@@ -302,6 +317,12 @@ async function handlePOST(request:NextRequest,context:RouteContext){
 
 async function handlePATCH(request:NextRequest,context:RouteContext){
   const path=await pathOf(context);const key=path.join('/');const raw=await requestBody(request);
+  if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]){
+    const user=await auth(request);if(isResponse(user))return user;const item=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!item)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(item.caseId,user.id,item.authorId))return fail('이 기록을 변경할 권한이 없습니다.',403,'FORBIDDEN');
+    const value=parsed(careLogPatchSchema,raw);if(isResponse(value))return value;const details={...((item.detailsJson as Record<string,unknown>|null)??{})};for(const field of ['mealType','mealAmount','hydration','temperature','medication'] as const)if(Object.prototype.hasOwnProperty.call(value,field))details[field]=value[field]??null;
+    const merged:Record<string,unknown>={meal:value.meal===undefined?item.meal:value.meal,pain:value.pain===undefined?item.reportedPain:value.pain,bowelMovement:value.bowelMovement===undefined?item.bowelMovement:value.bowelMovement,sleep:value.sleep===undefined?item.sleep:value.sleep,mobility:value.mobility===undefined?item.mobility:value.mobility,mood:value.mood===undefined?item.mood:value.mood,neededItems:value.neededItems===undefined?item.neededItems:value.neededItems,heardFromStaff:value.heardFromStaff===undefined?item.heardFromStaff:value.heardFromStaff,note:value.note===undefined?item.note:value.note,...details};if(!meaningfulCare(merged))return fail('기록할 내용을 하나 이상 유지해 주세요.',400,'EMPTY_CARE_LOG');
+    const updated=await prisma.careLog.update({where:{id:item.id},data:{recordedAt:value.recordedAt===undefined?undefined:value.recordedAt??item.recordedAt,meal:value.meal,reportedPain:value.pain,bowelMovement:value.bowelMovement,sleep:value.sleep,mobility:value.mobility,mood:value.mood,neededItems:value.neededItems,heardFromStaff:value.heardFromStaff,note:value.note,detailsJson:details as Prisma.InputJsonValue,deletedAt:value.restore?null:undefined}});await audit(value.restore?'care_log_restored':'care_log_updated',user.id,item.id,item.caseId);return ok({record:{id:updated.id,kind:'care-logs',authorId:updated.authorId,data:{recordedAt:updated.recordedAt.toISOString(),meal:updated.meal,pain:updated.reportedPain,bowelMovement:updated.bowelMovement,sleep:updated.sleep,mobility:updated.mobility,mood:updated.mood,neededItems:updated.neededItems,heardFromStaff:updated.heardFromStaff,note:updated.note,...((updated.detailsJson as Record<string,unknown>|null)??{})},createdAt:updated.createdAt.toISOString(),updatedAt:updated.updatedAt.toISOString(),deletedAt:updated.deletedAt?.toISOString()}});
+  }
   if((path[0]==='cases'&&path[2]==='tasks'&&path[3])||(path[0]==='tasks'&&path[1])){
     const user=await auth(request);if(isResponse(user))return user;const taskId=path[0]==='cases'?path[3]:path[1];const task=await prisma.task.findFirst({where:{id:taskId,deletedAt:null}});if(!task||path[0]==='cases'&&task.caseId!==path[1])return fail('할 일을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await permission(task.caseId,user.id,'write'))return fail('할 일 변경 권한이 없습니다.',403,'FORBIDDEN');
     const value=parsed(z.object({status:z.enum(['OPEN','TODO','DOING','DONE'])}),raw);if(isResponse(value))return value;const done=value.status==='DONE';const status=value.status==='OPEN'?TaskStatus.TODO:value.status as TaskStatus;const item=await prisma.task.update({where:{id:task.id},data:{status,completedAt:done?new Date():null,completedById:done?user.id:null}});await audit('task_status_changed',user.id,item.id,item.caseId);await notifyCase(item.caseId,user.id,'TASK_UPDATED',item.id);return ok({task:{id:item.id,title:item.title,status:done?'DONE':item.status==='TODO'?'OPEN':item.status,dueAt:item.dueAt?.toISOString()}});
@@ -318,7 +339,9 @@ async function handleDELETE(request:NextRequest,context:RouteContext){const path
 
 async function createPrivacy(userId:string,type:string,detail?:string){const item=await prisma.privacyRequest.create({data:{requestNumber:`PR-${Date.now()}-${randomUUID().slice(0,6)}`,userId,type,status:RequestStatus.RECEIVED,dueAt:new Date(Date.now()+30*86400000),resultSummary:detail}});await prisma.privacyRequestAction.create({data:{privacyRequestId:item.id,actorUserId:userId,action:'RECEIVED',note:detail}});return item;}
 async function deleteScheduleResource(request:NextRequest,context:RouteContext){
-  const path=await pathOf(context);if(!((path[0]==='cases'&&['events','tasks'].includes(path[2])&&path[3])||(['events','tasks'].includes(path[0])&&path[1])))return null;
+  const path=await pathOf(context);
+  if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]){const user=await auth(request);if(isResponse(user))return user;const log=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!log)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(log.caseId,user.id,log.authorId))return fail('이 기록을 삭제할 권한이 없습니다.',403,'FORBIDDEN');if(!log.deletedAt)await prisma.careLog.update({where:{id:log.id},data:{deletedAt:new Date()}});await audit('care_log_deleted',user.id,log.id,log.caseId);return ok({success:true,id:log.id});}
+  if(!((path[0]==='cases'&&['events','tasks'].includes(path[2])&&path[3])||(['events','tasks'].includes(path[0])&&path[1])))return null;
   const user=await auth(request);if(isResponse(user))return user;const kind=path[0]==='cases'?path[2]:path[0];const targetId=path[0]==='cases'?path[3]:path[1];const item=kind==='events'?await prisma.event.findFirst({where:{id:targetId,deletedAt:null}}):await prisma.task.findFirst({where:{id:targetId,deletedAt:null}});
   if(!item||path[0]==='cases'&&item.caseId!==path[1])return fail(kind==='events'?'일정을 찾을 수 없습니다.':'할 일을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await permission(item.caseId,user.id,'write'))return fail('삭제 권한이 없습니다.',403,'FORBIDDEN');
   if(kind==='events')await prisma.event.update({where:{id:item.id},data:{deletedAt:new Date()}});else await prisma.task.update({where:{id:item.id},data:{deletedAt:new Date()}});await audit(`${kind.slice(0,-1)}_deleted`,user.id,item.id,item.caseId);return ok({success:true});
