@@ -2,7 +2,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import {Shell} from '@/components/Shell';
 import {Icon,IconName} from '@/components/Icon';
-import {PublicAdSlot} from '@/components/PublicAdSlot';
 
 const features = [
   {icon:'camera', title: '사진 글자 추출', description: '병원 안내문 사진에서 한글을 기기 안에서 읽고 직접 확인해요.'},
@@ -75,6 +74,8 @@ export default function Home() {
           <div><span><Icon name="discharge"/></span><strong>돌봄 이어가기</strong><small>퇴원까지 놓침 없이</small></div>
         </section>
 
+        <section className="landing-supplies"><span><Icon name="shopping" size={30}/></span><div><small>입원 전에 필요한 것만 가볍게</small><h2>병원 생활 준비물 가이드</h2><p>병원 제공품과 반입 규정을 확인한 뒤 생활용품을 골라 보세요.</p></div><Link className="btn secondary" href="/supplies">준비물 보기</Link></section>
+
         <section className="privacy-banner">
           <div>
             <span className="privacy-mark" aria-hidden="true">✓</span>
@@ -85,7 +86,6 @@ export default function Home() {
           </div>
           <Link href="/legal">개인정보 보호 원칙 보기</Link>
         </section>
-        <PublicAdSlot/>
       </div>
     </Shell>
   );
