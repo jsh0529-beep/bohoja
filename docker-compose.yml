@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guardian_note
+      POSTGRES_USER: guardian_note
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 설정하세요}
+    volumes:
+      - guardian-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guardian_note -d guardian_note"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://guardian_note:${POSTGRES_PASSWORD}@postgres:5432/guardian_note?schema=public
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET를 설정하세요}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL을 설정하세요}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD를 설정하세요}
+      AI_PROVIDER: ${AI_PROVIDER:-local}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-test}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-fixture}
+      NOTIFICATION_PROVIDER: ${NOTIFICATION_PROVIDER:-console}
+      OBJECT_STORAGE_PROVIDER: ${OBJECT_STORAGE_PROVIDER:-local}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/data/uploads}
+    volumes:
+      - guardian-uploads:/app/data/uploads
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  guardian-postgres:
+  guardian-uploads:
