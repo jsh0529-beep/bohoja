@@ -9,7 +9,8 @@ import {createDischargePdf} from '@/lib/discharge-pdf';
 import {analyzeUploadedDocument,fixtureAnalysis} from '@/lib/ai-provider';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const ok=(data:unknown,status=200)=>NextResponse.json(data,{status});
+// Authenticated JSON must never be reused by Railway/CDN or the PWA cache.
+const ok=(data:unknown,status=200)=>NextResponse.json(data,{status,headers:{'cache-control':'private, no-store, no-cache, max-age=0, must-revalidate','pragma':'no-cache','vary':'Cookie, Authorization'}});
 const fail=(message:string,status=400,code='BAD_REQUEST')=>ok({error:{code,message}},status);
 const requestBody=async(request:NextRequest)=>{try{if(request.headers.get('content-type')?.includes('multipart/form-data'))return Object.fromEntries((await request.formData()).entries());return await request.json();}catch{return {};}};
 const pathOf=(context:RouteContext)=>context.params.then(value=>value.path);
@@ -79,6 +80,14 @@ async function permission(caseId:string,userId:string,mode:'read'|'write'|'manag
   return mode==='write'?new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN,CaseRole.CAREGIVER]).has(member.role):new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role);
 }
 
+async function resolveCaseId(userId:string,mode:'read'|'write'|'manage',requested?:unknown){
+  if(typeof requested==='string'&&requested)return await permission(requested,userId,mode)?requested:null;
+  const memberships=await prisma.caseMember.findMany({where:{userId,revokedAt:null,patientCase:{deletedAt:null}},orderBy:{joinedAt:'desc'},select:{caseId:true,role:true}});
+  memberships.sort((a,b)=>Number(b.role===CaseRole.OWNER)-Number(a.role===CaseRole.OWNER));
+  for(const member of memberships)if(await permission(member.caseId,userId,mode))return member.caseId;
+  return null;
+}
+
 async function caseDto(member:any){return {id:member.patientCase.id,ownerId:member.patientCase.createdById,patientAlias:member.patientCase.alias,relationship:member.patientCase.relationship,hospital:member.patientCase.hospitalName??undefined,consented:consented(member),aiConsented:hasConsent(member,'ai_transfer'),createdAt:member.patientCase.createdAt.toISOString(),role:apiRole(member.role)};}
 async function documentDto(document:any){const job=document.extractionJobs?.[0];const fields=Object.fromEntries((job?.fields??[]).map((field:any)=>[field.fieldName,field.valueJson]));return {id:document.id,caseId:document.caseId,fileName:document.originalName,mimeType:document.mimeType,byteSize:document.byteSize,pageCount:document.pageCount,originalAvailable:!document.storageKey.includes(':')&&document.byteSize>0,status:document.status===DocumentStatus.CONFIRMED?'CONFIRMED':document.status===DocumentStatus.FAILED?'FAILED':'DRAFT',fields,createdAt:document.createdAt.toISOString()};}
 const documentInclude={extractionJobs:{orderBy:{createdAt:'desc' as const},take:1,include:{fields:true}}};
@@ -145,7 +154,7 @@ async function handleGET(request:NextRequest,context:RouteContext){
     const [profile,memberships,agreements,requests]=await Promise.all([prisma.userProfile.findUnique({where:{userId:user.id}}),prisma.caseMember.findMany({where:{userId:user.id,revokedAt:null},include:{patientCase:true}}),prisma.userAgreement.findMany({where:{userId:user.id}}),prisma.privacyRequest.findMany({where:{userId:user.id}})]);
     await audit('personal_data_exported',user.id,user.id);return new NextResponse(JSON.stringify({user:{id:user.id,email:user.credential?.email,name:profile?.displayName},cases:memberships.map(item=>item.patientCase),agreements,privacyRequests:requests,exportedAt:new Date().toISOString()},null,2),{headers:{'content-type':'application/json; charset=utf-8','content-disposition':'attachment; filename=guardian-note-export.json'}});
   }
-  if(key==='discharge/pdf'||(path[0]==='cases'&&path[2]==='discharge'&&path[3]==='pdf')){const caseId=path[0]==='cases'?path[1]:(await prisma.caseMember.findFirst({where:{userId:user.id,revokedAt:null}}))?.caseId;if(!caseId||!await permission(caseId,user.id,'read'))return fail('접근 권한이 없습니다.',403,'FORBIDDEN');const data=await overview(caseId,user.id);if(!data)return fail('돌봄방을 찾을 수 없습니다.',404,'NOT_FOUND');const bytes=await createDischargePdf({patientAlias:data.case.patientAlias,hospital:data.case.hospital,generatedAt:new Date(),records:data.records});await audit('discharge_pdf_generated',user.id,caseId,caseId);return new NextResponse(new Uint8Array(bytes),{headers:{'content-type':'application/pdf','content-length':String(bytes.length),'cache-control':'private, no-store','content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(`${data.case.patientAlias}-퇴원패키지.pdf`)}`}});}
+  if(key==='discharge/pdf'||(path[0]==='cases'&&path[2]==='discharge'&&path[3]==='pdf')){const caseId=await resolveCaseId(user.id,'read',path[0]==='cases'?path[1]:undefined);if(!caseId)return fail('접근 권한이 없습니다.',403,'FORBIDDEN');const data=await overview(caseId,user.id);if(!data)return fail('돌봄방을 찾을 수 없습니다.',404,'NOT_FOUND');const bytes=await createDischargePdf({patientAlias:data.case.patientAlias,hospital:data.case.hospital,generatedAt:new Date(),records:data.records});await audit('discharge_pdf_generated',user.id,caseId,caseId);return new NextResponse(new Uint8Array(bytes),{headers:{'content-type':'application/pdf','content-length':String(bytes.length),'cache-control':'private, no-store','content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(`${data.case.patientAlias}-퇴원패키지.pdf`)}`}});}
   if(key.startsWith('admin/')){
     const actor=await admin(request);if(isResponse(actor))return actor;
     if(key==='admin/dashboard'){const [users,cases,payments,privacyPending]=await Promise.all([prisma.user.count(),prisma.patientCase.count(),prisma.paymentEvent.count(),prisma.privacyRequest.count({where:{status:{not:RequestStatus.COMPLETED}}})]);return ok({users,cases,payments,privacyPending});}
@@ -223,7 +232,8 @@ async function handlePOST(request:NextRequest,context:RouteContext){
     await audit('on_device_ocr_saved',user.id,document.id,caseId);
     return ok({analysis:await documentDto(document)},201);
   }
-  const explicitCaseId=path[0]==='cases'?path[1]:typeof (raw as any).caseId==='string'?(raw as any).caseId:(await prisma.caseMember.findFirst({where:{userId:user.id,revokedAt:null},orderBy:{joinedAt:'asc'}}))?.caseId;
+  const requestedCaseId=path[0]==='cases'?path[1]:(raw as any).caseId;
+  const explicitCaseId=await resolveCaseId(user.id,'read',requestedCaseId);
   if(key==='documents'||(path[0]==='cases'&&path[2]==='documents'&&path[3]==='analyze')){
     if(process.env.AI_DOCUMENT_ANALYSIS_ENABLED!=='true')return fail('AI 문서 분석은 다음 단계에서 제공할 예정입니다. 지금은 사진 글자 추출을 이용해 주세요.',410,'FEATURE_POSTPONED');
     if(!['fixture','local'].includes(process.env.AI_PROVIDER??'local'))return fail('설정된 AI 공급자 연결이 준비되지 않았습니다.',503,'AI_PROVIDER_NOT_CONFIGURED');
