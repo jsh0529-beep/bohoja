@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 const development=process.env.NODE_ENV!=="production";
-const csp=["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","img-src 'self' data: blob:","font-src 'self' data:","style-src 'self' 'unsafe-inline'",`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${development?" 'unsafe-eval'":""}`,"connect-src 'self'","frame-src 'self'","worker-src 'self' blob:","upgrade-insecure-requests"].join('; ');
+const csp=["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","img-src 'self' data: blob:","font-src 'self' data:","style-src 'self' 'unsafe-inline'",`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${development?" 'unsafe-eval'":""}`,"connect-src 'self'","frame-src 'self'","worker-src 'self' blob:"].join('; ');
 const nextConfig: NextConfig = {
   reactStrictMode:true,
   allowedDevOrigins:["127.0.0.1"],
