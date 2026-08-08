@@ -8,7 +8,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate --schema prisma/schema.postgres.prisma
+RUN DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build npx prisma generate --schema prisma/schema.postgres.prisma
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runner
