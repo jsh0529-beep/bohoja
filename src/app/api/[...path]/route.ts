@@ -7,6 +7,7 @@ import {ensureBootstrap,legalVersion,newToken,prisma,sha256} from '@/lib/databas
 import {readUpload,removeUpload,storeUpload} from '@/lib/file-storage';
 import {createDischargePdf} from '@/lib/discharge-pdf';
 import {analyzeUploadedDocument,fixtureAnalysis} from '@/lib/ai-provider';
+import {canAdministerMember,roleAllows} from './role-policy';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Authenticated JSON must never be reused by Railway/CDN or the PWA cache.
@@ -75,9 +76,9 @@ const hasConsent=(member:any,kind:string)=>member?.patientCase.consents.find((it
 const consented=(member:any)=>member?.patientCase.consents.find((item:any)=>item.kind==='sensitive')?.status===ConsentStatus.GRANTED;
 async function permission(caseId:string,userId:string,mode:'read'|'write'|'manage'){
   const member=await membership(caseId,userId);if(!member)return false;
-  if(mode==='read')return (active(member)&&consented(member))||member.role===CaseRole.OWNER;
+  if(mode==='read')return roleAllows(member.role,'read')&&((active(member)&&consented(member))||member.role===CaseRole.OWNER);
   if(!active(member)||!consented(member))return false;
-  return mode==='write'?new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN,CaseRole.CAREGIVER]).has(member.role):new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role);
+  return roleAllows(member.role,mode);
 }
 async function canManageCareLog(caseId:string,userId:string,authorId:string){
   if(userId===authorId)return Boolean(await permission(caseId,userId,'write'));
@@ -128,7 +129,8 @@ async function overview(caseId:string,userId:string){
     ...expenses.map(item=>({id:item.id,kind:'expenses',data:{title:item.title,amount:item.amountKrw,split:'가족 균등 분담'},createdAt:item.createdAt.toISOString(),authorName:authors[item.paidById]??'보호자'})),
     ...(plans[0]?.items??[]).map(item=>({id:item.id,kind:'discharge/items',data:{title:item.title,completed:Boolean(item.completedAt)},createdAt:(item.completedAt??plans[0].startedAt).toISOString(),authorName:'가족'})),
   ].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  return {case:await caseDto(member),members:members.map(item=>({caseId,userId:item.userId,role:apiRole(item.role),name:item.user.profile?.displayName??'알 수 없는 구성원',email:item.user.credential?.email??''})),invitations:invitations.map(item=>({id:item.id,email:item.inviteeEmail,role:apiRole(item.role),status:item.revokedAt?'REVOKED':item.acceptedAt?'ACCEPTED':'PENDING',expiresAt:item.expiresAt.toISOString()})),documents:await Promise.all(documents.map(documentDto)),events:events.map(item=>({id:item.id,title:item.title,startsAt:item.startsAt.toISOString(),endsAt:item.endsAt?.toISOString(),location:item.location,important:item.important})),tasks:tasks.map(item=>({id:item.id,title:item.title,description:item.description,status:item.status===TaskStatus.TODO?'OPEN':item.status,dueAt:item.dueAt?.toISOString(),assigneeId:item.assigneeId,priority:item.priority})),notifications:notifications.map(item=>({id:item.id,category:item.category,createdAt:item.createdAt.toISOString()})),records};
+  const canSeeMemberEmails=new Set<CaseRole>([CaseRole.OWNER,CaseRole.CO_ADMIN]).has(member.role);
+  return {case:await caseDto(member),currentUserId:userId,members:members.map(item=>({caseId,userId:item.userId,isSelf:item.userId===userId,canChangeRole:[CaseRole.CO_ADMIN,CaseRole.CAREGIVER,CaseRole.VIEWER].some(role=>role!==item.role&&canAdministerMember(member.role,userId,item.role,item.userId,role)),canRemove:canAdministerMember(member.role,userId,item.role,item.userId),role:apiRole(item.role),name:item.user.profile?.displayName??'알 수 없는 구성원',email:canSeeMemberEmails||item.userId===userId?item.user.credential?.email??'':''})),invitations:invitations.map(item=>({id:item.id,email:item.inviteeEmail,role:apiRole(item.role),status:item.revokedAt?'REVOKED':item.acceptedAt?'ACCEPTED':'PENDING',expiresAt:item.expiresAt.toISOString()})),documents:await Promise.all(documents.map(documentDto)),events:events.map(item=>({id:item.id,title:item.title,startsAt:item.startsAt.toISOString(),endsAt:item.endsAt?.toISOString(),location:item.location,important:item.important})),tasks:tasks.map(item=>({id:item.id,title:item.title,description:item.description,status:item.status===TaskStatus.TODO?'OPEN':item.status,dueAt:item.dueAt?.toISOString(),assigneeId:item.assigneeId,priority:item.priority})),notifications:notifications.map(item=>({id:item.id,category:item.category,createdAt:item.createdAt.toISOString()})),records};
 }
 
 async function handleGET(request:NextRequest,context:RouteContext){
@@ -215,6 +217,7 @@ async function handlePOST(request:NextRequest,context:RouteContext){
     const changed=await prisma.invitation.updateMany({where:{id:invitation.id,acceptedAt:null,revokedAt:null,expiresAt:{gt:new Date()}},data:{acceptedAt:new Date(),acceptedById:user.id}});if(changed.count!==1)return fail('이미 사용된 초대입니다.',410,'INVITATION_INVALID');await prisma.caseMember.upsert({where:{caseId_userId:{caseId:invitation.caseId,userId:user.id}},update:{role:invitation.role,revokedAt:null},create:{caseId:invitation.caseId,userId:user.id,role:invitation.role}});await audit('invitation_accepted',user.id,invitation.id,invitation.caseId);return ok({caseId:invitation.caseId,role:apiRole(invitation.role)});
   }
   const user=await auth(request);if(isResponse(user))return user;
+  if((key==='invitations'||(path[0]==='cases'&&path[2]==='invitations'))&&['MANAGER','CO_ADMIN','EDITOR'].includes(String((raw as any).role))){const requested=path[0]==='cases'?path[1]:(raw as any).caseId;const caseId=await resolveCaseId(user.id,'manage',requested);const actor=caseId?await membership(caseId,user.id):null;if(!actor||actor.role!==CaseRole.OWNER)return fail('공동관리자 초대는 소유자만 할 수 있습니다.',403,'FORBIDDEN');}
   if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]&&path[4]==='restore'){
     const item=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!item)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(item.caseId,user.id,item.authorId))return fail('이 기록을 복원할 권한이 없습니다.',403,'FORBIDDEN');const updated=await prisma.careLog.update({where:{id:item.id},data:{deletedAt:null}});await audit('care_log_restored',user.id,item.id,item.caseId);return ok({record:{id:updated.id,kind:'care-logs',updatedAt:updated.updatedAt.toISOString(),deletedAt:null}});
   }
@@ -317,6 +320,9 @@ async function handlePOST(request:NextRequest,context:RouteContext){
 
 async function handlePATCH(request:NextRequest,context:RouteContext){
   const path=await pathOf(context);const key=path.join('/');const raw=await requestBody(request);
+  if(path[0]==='cases'&&path[2]==='members'&&path[3]){
+    const user=await auth(request);if(isResponse(user))return user;const [actor,target]=await Promise.all([membership(path[1],user.id),membership(path[1],path[3])]);if(!actor||!target)return fail('구성원을 찾을 수 없습니다.',404,'NOT_FOUND');const value=parsed(z.object({role:z.enum(['MANAGER','CO_ADMIN','CAREGIVER','VIEWER'])}),raw);if(isResponse(value))return value;const nextRole=dbRole(value.role);if(!canAdministerMember(actor.role,user.id,target.role,target.userId,nextRole))return fail('이 구성원의 권한을 변경할 수 없습니다.',403,'FORBIDDEN');const item=await prisma.caseMember.update({where:{id:target.id},data:{role:nextRole}});await audit('case_member_role_changed',user.id,item.id,item.caseId);return ok({member:{caseId:item.caseId,userId:item.userId,role:apiRole(item.role)}});
+  }
   if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]){
     const user=await auth(request);if(isResponse(user))return user;const item=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!item)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(item.caseId,user.id,item.authorId))return fail('이 기록을 변경할 권한이 없습니다.',403,'FORBIDDEN');
     const value=parsed(careLogPatchSchema,raw);if(isResponse(value))return value;const details={...((item.detailsJson as Record<string,unknown>|null)??{})};for(const field of ['mealType','mealAmount','hydration','temperature','medication'] as const)if(Object.prototype.hasOwnProperty.call(value,field))details[field]=value[field]??null;
@@ -340,6 +346,8 @@ async function handleDELETE(request:NextRequest,context:RouteContext){const path
 async function createPrivacy(userId:string,type:string,detail?:string){const item=await prisma.privacyRequest.create({data:{requestNumber:`PR-${Date.now()}-${randomUUID().slice(0,6)}`,userId,type,status:RequestStatus.RECEIVED,dueAt:new Date(Date.now()+30*86400000),resultSummary:detail}});await prisma.privacyRequestAction.create({data:{privacyRequestId:item.id,actorUserId:userId,action:'RECEIVED',note:detail}});return item;}
 async function deleteScheduleResource(request:NextRequest,context:RouteContext){
   const path=await pathOf(context);
+  if(path[0]==='cases'&&path[2]==='members'&&path[3]){const user=await auth(request);if(isResponse(user))return user;const [actor,target]=await Promise.all([membership(path[1],user.id),membership(path[1],path[3])]);if(!actor||!target)return fail('구성원을 찾을 수 없습니다.',404,'NOT_FOUND');if(!canAdministerMember(actor.role,user.id,target.role,target.userId))return fail('이 구성원을 내보낼 수 없습니다.',403,'FORBIDDEN');await prisma.caseMember.update({where:{id:target.id},data:{revokedAt:new Date()}});await audit('case_member_revoked',user.id,target.id,target.caseId);return ok({success:true,userId:target.userId});}
+  if((path[0]==='cases'&&path[2]==='invitations'&&path[3])||(path[0]==='invitations'&&path[1])){const user=await auth(request);if(isResponse(user))return user;const invitation=path[0]==='cases'?await prisma.invitation.findFirst({where:{id:path[3],caseId:path[1]}}):await prisma.invitation.findUnique({where:{id:path[1]}});if(!invitation)return fail('초대를 찾을 수 없습니다.',404,'NOT_FOUND');const actor=await membership(invitation.caseId,user.id);if(!actor||!canAdministerMember(actor.role,user.id,invitation.role,`invite:${invitation.id}`))return fail('이 초대를 취소할 권한이 없습니다.',403,'FORBIDDEN');if(!invitation.revokedAt&&!invitation.acceptedAt)await prisma.invitation.update({where:{id:invitation.id},data:{revokedAt:new Date()}});await audit('invitation_revoked',user.id,invitation.id,invitation.caseId);return ok({success:true});}
   if(path[0]==='cases'&&path[2]==='care-logs'&&path[3]){const user=await auth(request);if(isResponse(user))return user;const log=await prisma.careLog.findFirst({where:{id:path[3],caseId:path[1]}});if(!log)return fail('돌봄 기록을 찾을 수 없습니다.',404,'NOT_FOUND');if(!await canManageCareLog(log.caseId,user.id,log.authorId))return fail('이 기록을 삭제할 권한이 없습니다.',403,'FORBIDDEN');if(!log.deletedAt)await prisma.careLog.update({where:{id:log.id},data:{deletedAt:new Date()}});await audit('care_log_deleted',user.id,log.id,log.caseId);return ok({success:true,id:log.id});}
   if(!((path[0]==='cases'&&['events','tasks'].includes(path[2])&&path[3])||(['events','tasks'].includes(path[0])&&path[1])))return null;
   const user=await auth(request);if(isResponse(user))return user;const kind=path[0]==='cases'?path[2]:path[0];const targetId=path[0]==='cases'?path[3]:path[1];const item=kind==='events'?await prisma.event.findFirst({where:{id:targetId,deletedAt:null}}):await prisma.task.findFirst({where:{id:targetId,deletedAt:null}});
