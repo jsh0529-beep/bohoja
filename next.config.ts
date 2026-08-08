@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 const development=process.env.NODE_ENV!=="production";
-const adsenseEnabled=Boolean(process.env.NEXT_PUBLIC_ADSENSE_CLIENT&&process.env.NEXT_PUBLIC_ADSENSE_SLOT);
-const adScript=adsenseEnabled?' https://*.googlesyndication.com https://*.google.com':'';
-const adMedia=adsenseEnabled?' https://*.googlesyndication.com https://*.doubleclick.net https://*.googleusercontent.com':'';
-const csp=["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'",`img-src 'self' data: blob:${adMedia}`,"font-src 'self' data:","style-src 'self' 'unsafe-inline'",`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${development?" 'unsafe-eval'":""}${adScript}`,`connect-src 'self'${adScript}`,`frame-src 'self'${adMedia}`,"worker-src 'self' blob:","upgrade-insecure-requests"].join('; ');
+const csp=["default-src 'self'","base-uri 'self'","object-src 'none'","frame-ancestors 'none'","form-action 'self'","img-src 'self' data: blob:","font-src 'self' data:","style-src 'self' 'unsafe-inline'",`script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${development?" 'unsafe-eval'":""}`,"connect-src 'self'","frame-src 'self'","worker-src 'self' blob:","upgrade-insecure-requests"].join('; ');
 const nextConfig: NextConfig = {
   reactStrictMode:true,
   allowedDevOrigins:["127.0.0.1"],
