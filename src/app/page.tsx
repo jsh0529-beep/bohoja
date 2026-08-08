@@ -2,9 +2,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import {Shell} from '@/components/Shell';
 import {Icon,IconName} from '@/components/Icon';
+import {PublicAdSlot} from '@/components/PublicAdSlot';
 
 const features = [
-  {icon:'document', title: '문서 AI 정리', description: '병원 안내문의 일정과 준비물을 원문과 함께 확인해요.'},
+  {icon:'camera', title: '사진 글자 추출', description: '병원 안내문 사진에서 한글을 기기 안에서 읽고 직접 확인해요.'},
   {icon:'handoff', title: '가족 교대', description: '가족마다 필요한 권한만 나누고 돌봄 내용을 이어가요.'},
   {icon:'discharge', title: '퇴원 준비', description: '담당자와 D-Day별 할 일을 체크리스트로 관리해요.'},
   {icon:'expense', title: '비용 정산', description: '영수증과 가족별 분담 내역을 한곳에서 정리해요.'},
@@ -29,7 +30,7 @@ export default function Home() {
             <ul className="trust-list" aria-label="보호자노트의 주요 원칙">
               <li>민감정보 개별 동의</li>
               <li>가족별 권한 관리</li>
-              <li>AI 결과 원문 확인</li>
+              <li>사진은 기기 안에서 처리</li>
             </ul>
           </div>
 
@@ -67,7 +68,7 @@ export default function Home() {
         </section>
 
         <section className="care-flow" aria-label="보호자노트 이용 흐름">
-          <div><span><Icon name="document"/></span><strong>안내문 정리</strong><small>원문을 확인해 저장</small></div>
+          <div><span><Icon name="camera"/></span><strong>안내문 글자 추출</strong><small>사진 전송 없이 기기에서</small></div>
           <i aria-hidden="true">→</i>
           <div><span><Icon name="family"/></span><strong>가족과 공유</strong><small>권한에 맞게 전달</small></div>
           <i aria-hidden="true">→</i>
@@ -84,6 +85,7 @@ export default function Home() {
           </div>
           <Link href="/legal">개인정보 보호 원칙 보기</Link>
         </section>
+        <PublicAdSlot/>
       </div>
     </Shell>
   );
