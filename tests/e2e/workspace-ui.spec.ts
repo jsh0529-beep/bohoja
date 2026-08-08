@@ -74,3 +74,38 @@ test('모바일 홈에서 일정과 할 일을 직접 추가하고 완료·취�
   await expect(page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).resolves.toBe(true);
   await page.screenshot({path:'outputs/guardian-care-planner-mobile.png',fullPage:true});
 });
+
+test('모바일에서 돌봄 기록을 수정·삭제하고 8초 안에 되돌린다',async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:360,height:800});
+  const email=`record-edit-${Date.now()}@test.local`;
+  const signup=await page.request.post('/api/auth/signup',{data:account(email)});expect(signup.status()).toBe(201);
+  expect((await page.request.post('/api/auth/verify-email',{data:{code:(await signup.json()).testCode}})).status()).toBe(200);
+  const caseResponse=await page.request.post('/api/cases',{data:{patientAlias:'수정 검수',relationship:'자녀',authority:'CAREGIVER',sensitiveConsent:true}});
+  expect(caseResponse.status()).toBe(201);const caseId=(await caseResponse.json()).case.id as string;
+  const created=await page.request.post(`/api/cases/${caseId}/care-logs`,{data:{mealType:'조식',hydration:'한 컵',note:'수정 전 메모'}});
+  expect(created.status()).toBe(201);const recordId=(await created.json()).item.id as string;
+
+  await page.goto('/records');
+  await expect(page.getByText('수정 전 메모')).toBeVisible();
+  await page.getByRole('button',{name:'수정',exact:true}).click();
+  const edit=page.locator('form.record-edit');
+  await edit.getByLabel('수분 섭취').fill('');
+  await edit.getByLabel('생활 상태와 메모').fill('수정한 메모');
+  await edit.getByRole('button',{name:'수정 저장'}).click();
+  await expect(page.getByText('수정한 메모')).toBeVisible();
+  await expect(page.getByText('수분 한 컵')).toHaveCount(0);
+  await expect(page.getByText(/수정 \d/)).toBeVisible();
+
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'삭제',exact:true}).click();
+  await expect(page.getByText('기록을 삭제했어요.')).toBeVisible();
+  await expect(page.getByText('수정한 메모')).toHaveCount(0);
+  await page.getByRole('button',{name:'되돌리기'}).click();
+  await expect(page.getByText('수정한 메모')).toBeVisible();
+
+  const overview=await (await page.request.get(`/api/cases/${caseId}/overview`)).json();
+  expect(overview.records).toEqual(expect.arrayContaining([expect.objectContaining({id:recordId,data:expect.objectContaining({hydration:null,note:'수정한 메모'})})]));
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBeTruthy();
+  await page.screenshot({path:'outputs/guardian-record-edit-mobile.png',fullPage:true});
+});
