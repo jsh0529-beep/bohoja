@@ -472,6 +472,7 @@ model CareLog {
   neededItems    String?
   heardFromStaff String?
   note           String?
+  detailsJson    Json?
   createdAt      DateTime    @default(now())
   patientCase    PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
