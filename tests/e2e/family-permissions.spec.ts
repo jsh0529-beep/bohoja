@@ -22,6 +22,11 @@ test('가족 권한은 화면과 직접 API 접근에서 동일하게 적용된�
   const managerId=overview.members.find((item:{email:string})=>item.email===managerEmail).userId as string;const viewerId=overview.members.find((item:{email:string})=>item.email===viewerEmail).userId as string;const ownerId=overview.members.find((item:{email:string})=>item.email===ownerEmail).userId as string;
   expect((await managerPage.request.post(`/api/cases/${caseId}/care-logs`,{data:{note:'보호자 기록'}})).status()).toBe(201);
   expect((await viewerPage.request.post(`/api/cases/${caseId}/care-logs`,{data:{note:'열람자 작성 차단'}})).status()).toBe(403);
+  const ownerEvent=await page.request.post(`/api/cases/${caseId}/events`,{data:{title:'권한 검수 일정'}});const eventId=(await ownerEvent.json()).event.id as string;
+  const ownerTask=await page.request.post(`/api/cases/${caseId}/tasks`,{data:{title:'권한 검수 할 일'}});const taskId=(await ownerTask.json()).task.id as string;
+  expect((await viewerPage.request.patch(`/api/cases/${caseId}/events/${eventId}`,{data:{title:'열람자 변경 차단'}})).status()).toBe(403);
+  expect((await viewerPage.request.patch(`/api/cases/${caseId}/tasks/${taskId}`,{data:{status:'DONE'}})).status()).toBe(403);
+  expect((await viewerPage.request.delete(`/api/cases/${caseId}/tasks/${taskId}`)).status()).toBe(403);
   const viewerOverview=await (await viewerPage.request.get(`/api/cases/${caseId}/overview`)).json();
   expect(viewerOverview.members.find((item:{userId:string})=>item.userId===viewerId).email).toBe(viewerEmail);
   expect(viewerOverview.members.filter((item:{userId:string})=>item.userId!==viewerId).every((item:{email:string})=>item.email==='')).toBe(true);
