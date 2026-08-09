@@ -19,10 +19,11 @@ type Member={caseId:string;userId:string;role:Role;name:string;email:string;isSe
 type Invitation={id:string;email:string;role:Role;status:'PENDING'|'ACCEPTED'|'REVOKED';expiresAt:string};
 type DocumentItem={id:string;fileName:string;mimeType?:string;byteSize?:number;pageCount?:number;originalAvailable?:boolean;status:'DRAFT'|'CONFIRMED'|'FAILED';fields:Record<string,unknown>;createdAt:string};
 type RecordItem={id:string;kind:string;data:Record<string,unknown>;createdAt:string;updatedAt?:string;authorId?:string;authorName:string;canManageRecord?:boolean};
-type Overview={case:CareCase;members:Member[];invitations:Invitation[];documents:DocumentItem[];events:Array<{id:string;title:string;startsAt:string;location?:string}>;tasks:Array<{id:string;title:string;status:string;dueAt?:string}>;notifications:Array<{id:string;category:string;createdAt:string}>;records:RecordItem[]};
+type Overview={case:CareCase;currentUserId:string;members:Member[];invitations:Invitation[];documents:DocumentItem[];events:Array<{id:string;title:string;startsAt:string;location?:string;timeUnspecified?:boolean;canManage?:boolean}>;tasks:Array<{id:string;title:string;status:string;dueAt?:string;assigneeId?:string;assigneeName?:string;completedAt?:string;completedByName?:string;canManage?:boolean}>;notifications:Array<{id:string;category:string;createdAt:string}>;records:RecordItem[]};
 
 const roleLabel:Record<Role,string>={OWNER:'소유자',MANAGER:'공동관리자',CAREGIVER:'보호자',VIEWER:'열람자'};
-const formatDate=(value:string)=>new Intl.DateTimeFormat('ko-KR',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(value));
+const formatDate=(value:string)=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(value));
+const kstDay=(value:Date|string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
 const text=(value:unknown)=>Array.isArray(value)?value.join(', '):typeof value==='string'||typeof value==='number'?String(value):'';
 const recordLabel:Record<string,string>={'care-logs':'돌봄 기록',handoffs:'교대 브리핑',questions:'회진 질문',expenses:'비용','discharge/items':'퇴원 준비'};
 const notificationLabel:Record<string,string>={'care-logs':'새 돌봄 기록이 공유됐어요',handoffs:'새 교대 브리핑이 도착했어요',questions:'새 회진 질문이 추가됐어요',expenses:'새 비용 기록이 추가됐어요','discharge/items':'퇴원 준비 상태가 바뀌었어요',DOCUMENT_CONFIRMED:'문서 확인 결과가 반영됐어요'};
@@ -98,15 +99,15 @@ function Section({section,data,refresh}:{section:string;data:Overview;refresh:()
 }
 
 function Dashboard({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
-  const today=new Date().toDateString();
-  const todayRecords=data.records.filter(item=>new Date(item.createdAt).toDateString()===today);const todayEvents=data.events.filter(item=>new Date(item.startsAt).toDateString()===today);const openTasks=data.tasks.filter(item=>!['DONE','CANCELLED'].includes(item.status));
+  const today=kstDay(new Date());
+  const todayRecords=data.records.filter(item=>kstDay(item.createdAt)===today);const todayEvents=data.events.filter(item=>!item.timeUnspecified&&kstDay(item.startsAt)===today);const openTasks=data.tasks.filter(item=>!['DONE','CANCELLED'].includes(item.status));
   const openDocuments=data.documents.filter(item=>item.status==='DRAFT').length;
   const latestHandoff=data.records.find(item=>item.kind==='handoffs');
   return <>
     <div className="row"><div><span className="eyebrow">{data.case.patientAlias} 돌봄방</span><h1>오늘도 함께해요</h1></div><span className="pill">{roleLabel[data.case.role]}</span></div>
     {data.case.hospital&&<p className="sub">{data.case.hospital} · {data.case.relationship}</p>}
     <div className="grid two metric-grid"><div className="card metric-card"><span className="card-icon"><Icon name="calendar"/></span><span className="sub">오늘 일정</span><div className="metric">{todayEvents.length}</div><small>직접 추가한 일정 포함</small></div><div className="card metric-card"><span className="card-icon warm"><Icon name="discharge"/></span><span className="sub">남은 할 일</span><div className="metric">{openTasks.length}</div><small>가족이 확인할 업무</small></div></div>{todayRecords.length>0&&<p className="sub">오늘 가족 기록 {todayRecords.length}건 · 확인할 문서 {openDocuments}건</p>}
-    <DashboardPlanner data={data} refresh={refresh}/>
+    <AdvancedDashboardPlanner data={data} refresh={refresh}/>
     <div className="card"><div className="row"><h3>최근 교대 브리핑</h3><Link href="/handoff">브리핑 쓰기</Link></div>{latestHandoff?<><p>{text(latestHandoff.data.status)||text(latestHandoff.data.summary)||'내용을 확인해 주세요.'}</p><small className="sub">{latestHandoff.authorName} · {formatDate(latestHandoff.createdAt)}</small></>:<p className="sub">아직 전달된 브리핑이 없습니다.</p>}</div>
     <h2 className="section-title">빠른 실행</h2><div className="grid two quick-grid"><Link className="quick-action" href="/documents"><Icon name="camera"/><span>사진 글자 추출</span></Link><Link className="quick-action" href="/records"><Icon name="record"/><span>돌봄 기록</span></Link><Link className="quick-action" href="/questions"><Icon name="question"/><span>회진 질문</span></Link><Link className="quick-action" href="/discharge"><Icon name="discharge"/><span>퇴원 준비</span></Link></div>
     <Link className="comfort-teaser" href="/comfort"><span className="comfort-teaser-icon"><Icon name="heart"/></span><div><small>기다리는 마음도 돌봐주세요</small><strong>마음쉼터에서 잠시 숨을 고르기</strong></div><span className="chevron">›</span></Link>
@@ -116,15 +117,91 @@ function Dashboard({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
   </>;
 }
 
-function DashboardPlanner({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
-  const [mode,setMode]=useState<'event'|'task'>('event');const [title,setTitle]=useState('');const [when,setWhen]=useState('');const [location,setLocation]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);
+function AdvancedDashboardPlanner({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
+  type Edit={kind:'event'|'task';id:string;title:string;when:string;location:string;assigneeId:string};
+  const [now]=useState(()=>Date.now());
+  const [mode,setMode]=useState<'event'|'task'>('event');
+  const [title,setTitle]=useState('');
+  const [when,setWhen]=useState('');
+  const [location,setLocation]=useState('');
+  const [assigneeId,setAssigneeId]=useState('');
+  const [editing,setEditing]=useState<Edit|null>(null);
+  const [busy,setBusy]=useState('');
+  const [message,setMessage]=useState('');
   const writable=data.case.role!=='VIEWER'&&data.case.consented;
-  async function add(event:FormEvent){event.preventDefault();if(!title.trim()){setMessage(mode==='event'?'일정 이름을 입력해 주세요.':'할 일을 입력해 주세요.');return;}setBusy(true);setMessage('');const utcWhen=when?new Date(when).toISOString():undefined;try{await json(`/api/cases/${data.case.id}/${mode==='event'?'events':'tasks'}`,{method:'POST',body:JSON.stringify(mode==='event'?{title:title.trim(),startsAt:utcWhen||new Date().toISOString(),location:location.trim()||undefined}:{title:title.trim(),dueAt:utcWhen})});setTitle('');setWhen('');setLocation('');setMessage(mode==='event'?'일정을 추가했어요.':'할 일을 추가했어요.');await refresh();}catch(error){setMessage(error instanceof Error?error.message:'추가하지 못했습니다.');}finally{setBusy(false)}}
-  async function mutate(kind:'events'|'tasks',id:string,method:'PATCH'|'DELETE',body?:unknown){try{await json(`/api/cases/${data.case.id}/${kind}/${id}`,{method,body:body?JSON.stringify(body):undefined});await refresh();}catch(error){setMessage(error instanceof Error?error.message:'변경하지 못했습니다.');}}
-  const events=[...data.events].sort((a,b)=>a.startsAt.localeCompare(b.startsAt));const tasks=[...data.tasks].sort((a,b)=>Number(a.status==='DONE')-Number(b.status==='DONE')||(a.dueAt||'9999').localeCompare(b.dueAt||'9999'));
-  return <section className="planner" aria-labelledby="planner-title"><div className="row"><h2 id="planner-title" className="section-title">오늘 일정과 할 일</h2>{writable&&<div className="segmented" aria-label="추가할 종류"><button type="button" aria-pressed={mode==='event'} onClick={()=>setMode('event')}>일정</button><button type="button" aria-pressed={mode==='task'} onClick={()=>setMode('task')}>할 일</button></div>}</div>{writable&&<form className="planner-add" onSubmit={add}><label>제목 <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={mode==='event'?'예: 오후 회진':'예: 물티슈 가져오기'}/></label><label>{mode==='event'?'시간 (선택)':'마감 (선택)'} <input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>{mode==='event'&&<label>장소 (선택) <input value={location} onChange={e=>setLocation(e.target.value)} placeholder="예: 본관 2층"/></label>}<button className="btn" disabled={busy}>{busy?'추가 중…':'추가'}</button><small>제목만 입력해도 추가할 수 있어요.</small></form>}{message&&<p className="form-message" role="status">{message}</p>}<div className="planner-columns"><div className="planner-list"><h3>일정</h3>{events.length?events.slice(0,8).map(item=><div className="planner-item" key={item.id}><span><b>{item.title}</b><small>{formatDate(item.startsAt)}{item.location?` · ${item.location}`:''}</small></span>{writable&&<button className="icon-delete" aria-label={`${item.title} 일정 삭제`} onClick={()=>mutate('events',item.id,'DELETE')}>×</button>}</div>):<small className="sub">등록된 일정이 없어요.</small>}</div><div className="planner-list"><h3>할 일</h3>{tasks.length?tasks.slice(0,10).map(item=>{const done=item.status==='DONE';return <div className={`planner-item ${done?'done':''}`} key={item.id}><button className="task-check" aria-label={`${item.title} ${done?'미완료로 변경':'완료'}`} aria-pressed={done} disabled={!writable} onClick={()=>mutate('tasks',item.id,'PATCH',{status:done?'OPEN':'DONE'})}>{done?'✓':''}</button><span><b>{item.title}</b>{item.dueAt&&<small>{formatDate(item.dueAt)}</small>}</span>{writable&&<button className="icon-delete" aria-label={`${item.title} 할 일 삭제`} onClick={()=>mutate('tasks',item.id,'DELETE')}>×</button>}</div>}):<small className="sub">남은 할 일이 없어요.</small>}</div></div></section>
-}
+  const toIso=(value:string)=>value?new Date(`${value}:00+09:00`).toISOString():undefined;
+  const toLocal=(value?:string)=>value?new Date(new Date(value).getTime()+9*3600000).toISOString().slice(0,16):'';
 
+  async function request(url:string,method:string,body?:unknown){
+    if(busy)return false;
+    setBusy(url);setMessage('');
+    try{await json(url,{method,body:body?JSON.stringify(body):undefined});await refresh();return true}
+    catch(error){setMessage(error instanceof Error?error.message:'변경하지 못했습니다.');return false}
+    finally{setBusy('')}
+  }
+  async function add(event:FormEvent){
+    event.preventDefault();
+    if(!title.trim()){setMessage(mode==='event'?'일정 제목을 입력해 주세요.':'할 일 제목을 입력해 주세요.');return;}
+    const endpoint=`/api/cases/${data.case.id}/${mode==='event'?'events':'tasks'}`;
+    const payload=mode==='event'
+      ?{title:title.trim(),...(when?{startsAt:toIso(when)}:{}),location:location.trim()||undefined}
+      :{title:title.trim(),dueAt:toIso(when),assigneeId:assigneeId||undefined};
+    const ok=await request(endpoint,'POST',payload);
+    if(ok){setTitle('');setWhen('');setLocation('');setAssigneeId('');setMessage(mode==='event'?'일정을 추가했어요.':'할 일을 추가했어요.')}
+  }
+  async function saveEdit(event:FormEvent){
+    event.preventDefault();
+    if(!editing?.title.trim()){setMessage('제목을 입력해 주세요.');return;}
+    const endpoint=`/api/cases/${data.case.id}/${editing.kind==='event'?'events':'tasks'}/${editing.id}`;
+    const payload=editing.kind==='event'
+      ?{title:editing.title.trim(),startsAt:editing.when?toIso(editing.when):null,location:editing.location.trim()||null}
+      :{title:editing.title.trim(),dueAt:toIso(editing.when)||null,assigneeId:editing.assigneeId||null};
+    if(await request(endpoint,'PATCH',payload)){setEditing(null);setMessage('변경 내용을 저장했어요.')}
+  }
+  async function remove(kind:'events'|'tasks',id:string,titleText:string){
+    const detail=kind==='events'?'보호자노트에서만 삭제되며 병원 예약이나 검사는 취소되지 않아요.':'목록에서만 삭제되며 실제 돌봄 조치가 취소되는 것은 아니에요.';
+    if(!confirm(`“${titleText}”을(를) 삭제할까요?\n\n${detail}`))return;
+    await request(`/api/cases/${data.case.id}/${kind}/${id}`,'DELETE');
+  }
+  async function toggleTask(item:Overview['tasks'][number]){
+    const done=item.status==='DONE';
+    if(!done&&item.assigneeId&&item.assigneeId!==data.currentUserId&&!confirm(`담당자는 ${item.assigneeName||'다른 가족'}님입니다. 완료로 표시할까요?`))return;
+    if(await request(`/api/cases/${data.case.id}/tasks/${item.id}`,'PATCH',{status:done?'OPEN':'DONE'}))setMessage(done?'완료를 취소했어요.':'할 일을 완료했어요.');
+  }
+  const statusText=(value:string,done=false)=>{
+    if(done)return '완료';
+    const ms=new Date(value).getTime()-now;
+    if(ms<0)return '마감 지남';
+    const hours=Math.ceil(ms/3600000);
+    if(hours<=24)return hours<=1?'1시간 이내':`${hours}시간 남음`;
+    return kstDay(value)===kstDay(new Date(now+86400000))?'내일':'예정';
+  };
+  const events=[...data.events].sort((a,b)=>Number(a.timeUnspecified)-Number(b.timeUnspecified)||a.startsAt.localeCompare(b.startsAt));
+  const tasks=[...data.tasks].sort((a,b)=>Number(a.status==='DONE')-Number(b.status==='DONE')||(a.dueAt||'9999').localeCompare(b.dueAt||'9999'));
+
+  return <section className="planner advanced-planner" aria-labelledby="advanced-planner-title">
+    <div className="row"><div><h2 id="advanced-planner-title" className="section-title">일정과 할 일</h2><small className="sub">시간은 한국 표준시(KST)로 표시됩니다.</small></div>{writable&&<div className="segmented" aria-label="추가할 종류"><button type="button" aria-pressed={mode==='event'} onClick={()=>setMode('event')}>일정</button><button type="button" aria-pressed={mode==='task'} onClick={()=>setMode('task')}>할 일</button></div>}</div>
+    <p className="planner-safety">보호자노트에 적은 일정입니다. 병원 안내와 의료진에게 다시 확인해 주세요.</p>
+    {writable&&<form className="planner-add" onSubmit={add}>
+      <label>제목<input value={title} onChange={event=>setTitle(event.target.value)} placeholder={mode==='event'?'예: 오후 회진':'예: 물티슈 가져오기'}/></label>
+      <label>{mode==='event'?'시간 (선택)':'마감 (선택)'}<input type="datetime-local" value={when} onChange={event=>setWhen(event.target.value)}/></label>
+      {mode==='event'?<label>장소 (선택)<input value={location} onChange={event=>setLocation(event.target.value)} placeholder="예: 본관 2층"/></label>:<label>담당 가족 (선택)<select value={assigneeId} onChange={event=>setAssigneeId(event.target.value)}><option value="">담당자 없음</option>{data.members.map(member=><option key={member.userId} value={member.userId}>{member.name}</option>)}</select></label>}
+      <button className="btn" disabled={Boolean(busy)}>{busy?'처리 중…':'추가'}</button><small>제목만으로도 저장할 수 있어요.</small>
+    </form>}
+    {message&&<p className="form-message" role="status">{message}</p>}
+    {editing&&<form className="planner-edit" onSubmit={saveEdit}>
+      <h3>{editing.kind==='event'?'일정':'할 일'} 수정</h3>
+      <label>제목<input value={editing.title} onChange={event=>setEditing({...editing,title:event.target.value})}/></label>
+      <label>{editing.kind==='event'?'시간 (KST, 선택)':'마감 (KST, 선택)'}<input type="datetime-local" value={editing.when} onChange={event=>setEditing({...editing,when:event.target.value})}/></label>
+      {editing.kind==='event'?<label>장소 (선택)<input value={editing.location} onChange={event=>setEditing({...editing,location:event.target.value})}/></label>:<label>담당 가족 (선택)<select value={editing.assigneeId} onChange={event=>setEditing({...editing,assigneeId:event.target.value})}><option value="">담당자 없음</option>{data.members.map(member=><option key={member.userId} value={member.userId}>{member.name}</option>)}</select></label>}
+      <div className="record-edit-actions"><button type="button" className="btn secondary" onClick={()=>setEditing(null)} disabled={Boolean(busy)}>취소</button><button className="btn" disabled={Boolean(busy)}>수정 저장</button></div>
+    </form>}
+    <div className="planner-columns">
+      <div className="planner-list"><h3>일정 · 언제/어디서</h3>{events.length?events.slice(0,8).map(item=><div className="planner-item advanced" key={item.id}><span><b>{item.title}</b><small>{item.timeUnspecified?<em>시간 미정</em>:<><em>{statusText(item.startsAt)}</em> · {formatDate(item.startsAt)}</>}{item.location?` · ${item.location}`:''}</small></span>{writable&&item.canManage!==false&&<div className="mini-actions"><button onClick={()=>setEditing({kind:'event',id:item.id,title:item.title,when:item.timeUnspecified?'':toLocal(item.startsAt),location:item.location||'',assigneeId:''})}>수정</button><button onClick={()=>remove('events',item.id,item.title)}>삭제</button></div>}</div>):<small className="sub">등록된 일정이 없어요.</small>}</div>
+      <div className="planner-list"><h3>할 일 · 누가/언제까지</h3>{tasks.length?tasks.slice(0,10).map(item=>{const done=item.status==='DONE';return <div className={`planner-item advanced ${done?'done':''}`} key={item.id}><button className="task-check" aria-label={`${item.title} ${done?'완료 취소':'완료'}`} aria-pressed={done} disabled={!writable||Boolean(busy)||item.canManage===false} onClick={()=>toggleTask(item)}>{done?'✓':''}</button><span><b>{item.title}</b><small>{item.dueAt?<><em>{statusText(item.dueAt,done)}</em> · {formatDate(item.dueAt)}</>:'마감 없음'}{` · ${item.assigneeName?`담당 ${item.assigneeName}`:'담당자 없음'}`}</small>{done&&item.completedAt&&<small>{item.completedByName?`${item.completedByName} 완료 · `:''}{formatDate(item.completedAt)}</small>}</span>{writable&&item.canManage!==false&&<div className="mini-actions"><button onClick={()=>setEditing({kind:'task',id:item.id,title:item.title,when:toLocal(item.dueAt),location:'',assigneeId:item.assigneeId||''})}>수정</button><button onClick={()=>remove('tasks',item.id,item.title)}>삭제</button></div>}</div>}):<small className="sub">남은 할 일이 없어요.</small>}</div>
+    </div>
+  </section>
+}
 function Documents({data,refresh}:{data:Overview;refresh:()=>Promise<void>}){
   const writable=data.case.role!=='VIEWER'&&data.case.consented;
   return <><h1>사진 글자 추출</h1><div className="notice">사진은 휴대폰이나 PC 안에서만 처리되며 서버에 저장되지 않습니다. 추출된 글자는 원문과 대조해 직접 확인해 주세요.</div>
