@@ -612,15 +612,18 @@ model Notification {
   category    String
   channel     String
   templateKey String
+  referenceId String?
   status      NotificationStatus @default(QUEUED)
   dedupeKey   String?            @unique
   scheduledAt DateTime
   sentAt      DateTime?
+  readAt      DateTime?
   errorCode   String?
   createdAt   DateTime           @default(now())
   user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, scheduledAt])
+  @@index([userId, readAt, createdAt])
 }
 
 model Plan {
