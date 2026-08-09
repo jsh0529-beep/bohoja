@@ -15,5 +15,14 @@ test('모바일 회원가입 이메일 인증과 비밀번호 재설정이 실�
   await expect(page.getByLabel('6자리 재설정 코드')).toHaveValue(/^\d{6}$/);await page.getByLabel('새 비밀번호').fill('ChangedPassword123!');await page.getByRole('button',{name:'비밀번호 변경'}).click();
   await expect(page.getByRole('heading',{name:'다시 만나 반가워요'})).toBeVisible();await page.getByLabel('이메일').fill(email);await page.getByLabel('비밀번호').fill('ChangedPassword123!');await page.getByRole('button',{name:'확인하고 계속'}).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole('link',{name:'내 돌봄방 홈'}).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto('/');
+  await expect(page.getByRole('link',{name:'돌봄방으로'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'인증 검수님의 돌봄방 계속하기'})).toBeVisible();
+  await page.goto('/login');
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.reload();
+  await expect(page).toHaveURL(/\/dashboard$/);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBeTruthy();
 });
