@@ -122,6 +122,18 @@ model User {
   credential              UserCredential?
   sessions                AuthSession[]
   verificationChallenges  VerificationChallenge[]
+  settings                UserSetting[]
+}
+
+model UserSetting {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  valueJson Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
 }
 
 model UserCredential {
@@ -207,24 +219,43 @@ model LegalDocument {
 }
 
 model LegalDocumentVersion {
-  id                  String            @id @default(cuid())
+  id                  String             @id @default(cuid())
   legalDocumentId     String
   version             String
-  locale              String            @default("ko-KR")
+  locale              String             @default("ko-KR")
   bodyMd              String
   bodySha256          String
   effectiveAt         DateTime
   publishedAt         DateTime?
-  status              PublicationStatus @default(DRAFT)
-  requiresReagreement Boolean           @default(false)
-  createdAt           DateTime          @default(now())
-  legalDocument       LegalDocument     @relation(fields: [legalDocumentId], references: [id], onDelete: Restrict)
+  status              PublicationStatus  @default(DRAFT)
+  requiresReagreement Boolean            @default(false)
+  createdAt           DateTime           @default(now())
+  legalDocument       LegalDocument      @relation(fields: [legalDocumentId], references: [id], onDelete: Restrict)
   agreements          UserAgreement[]
   caseConsents        CaseConsent[]
   partnerLeads        PartnerLead[]
+  utilityEntries      CaseUtilityEntry[]
 
   @@unique([legalDocumentId, version, locale])
   @@index([status, publishedAt])
+}
+
+model CaseUtilityEntry {
+  id                     String                @id @default(cuid())
+  caseId                 String
+  kind                   String
+  title                  String
+  detail                 String?
+  occursAt               DateTime?
+  createdById            String
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  deletedAt              DateTime?
+  patientCase            PatientCase           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  legalDocumentVersion   LegalDocumentVersion? @relation(fields: [legalDocumentVersionId], references: [id])
+  legalDocumentVersionId String?
+
+  @@index([caseId, kind, createdAt])
 }
 
 model UserAgreement {
@@ -285,6 +316,7 @@ model PatientCase {
   dischargePlans      DischargePlan[]
   attachments         Attachment[]
   partnerLeads        PartnerLead[]
+  caseUtilityEntries  CaseUtilityEntry[]
 
   @@index([createdById, status])
   @@index([status, purgeAfter])
@@ -848,6 +880,16 @@ model AnalyticsEventDefinition {
   createdAt            DateTime  @default(now())
 
   @@unique([name, version])
+}
+
+model AnonymousUsageCounter {
+  id        String   @id @default(cuid())
+  eventName String
+  day       String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventName, day])
 }
 
 /// 로컬·테스트 공급자의 전체 실행 상태를 SQLite에 영속화한다.
