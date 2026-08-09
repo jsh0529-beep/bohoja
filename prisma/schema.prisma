@@ -219,41 +219,38 @@ model LegalDocument {
 }
 
 model LegalDocumentVersion {
-  id                  String             @id @default(cuid())
+  id                  String            @id @default(cuid())
   legalDocumentId     String
   version             String
-  locale              String             @default("ko-KR")
+  locale              String            @default("ko-KR")
   bodyMd              String
   bodySha256          String
   effectiveAt         DateTime
   publishedAt         DateTime?
-  status              PublicationStatus  @default(DRAFT)
-  requiresReagreement Boolean            @default(false)
-  createdAt           DateTime           @default(now())
-  legalDocument       LegalDocument      @relation(fields: [legalDocumentId], references: [id], onDelete: Restrict)
+  status              PublicationStatus @default(DRAFT)
+  requiresReagreement Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  legalDocument       LegalDocument     @relation(fields: [legalDocumentId], references: [id], onDelete: Restrict)
   agreements          UserAgreement[]
   caseConsents        CaseConsent[]
   partnerLeads        PartnerLead[]
-  utilityEntries      CaseUtilityEntry[]
 
   @@unique([legalDocumentId, version, locale])
   @@index([status, publishedAt])
 }
 
 model CaseUtilityEntry {
-  id                     String                @id @default(cuid())
-  caseId                 String
-  kind                   String
-  title                  String
-  detail                 String?
-  occursAt               DateTime?
-  createdById            String
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  deletedAt              DateTime?
-  patientCase            PatientCase           @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  legalDocumentVersion   LegalDocumentVersion? @relation(fields: [legalDocumentVersionId], references: [id])
-  legalDocumentVersionId String?
+  id          String      @id @default(cuid())
+  caseId      String
+  kind        String
+  title       String
+  detail      String?
+  occursAt    DateTime?
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+  patientCase PatientCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   @@index([caseId, kind, createdAt])
 }
