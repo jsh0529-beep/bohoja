@@ -1,4 +1,4 @@
-const CACHE='guardian-note-shell-v1';
+const CACHE='guardian-note-shell-v2';
 const SHELL=['/','/login','/signup','/dashboard','/more','/manifest.webmanifest'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
