@@ -234,7 +234,6 @@ model LegalDocumentVersion {
   agreements          UserAgreement[]
   caseConsents        CaseConsent[]
   partnerLeads        PartnerLead[]
-  utilityEntries      CaseUtilityEntry[]
 
   @@unique([legalDocumentId, version, locale])
   @@index([status, publishedAt])
@@ -314,6 +313,7 @@ model PatientCase {
   dischargePlans      DischargePlan[]
   attachments         Attachment[]
   partnerLeads        PartnerLead[]
+  caseUtilityEntries  CaseUtilityEntry[]
 
   @@index([createdById, status])
   @@index([status, purgeAfter])
