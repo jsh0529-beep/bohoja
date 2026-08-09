@@ -425,6 +425,7 @@ model Event {
   endsAt           DateTime?
   location         String?
   important        Boolean         @default(false)
+  timeUnspecified  Boolean         @default(false)
   createdById      String
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
