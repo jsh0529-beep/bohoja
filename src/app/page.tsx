@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import {Shell} from '@/components/Shell';
 import {Icon,IconName} from '@/components/Icon';
+import {getAuthenticatedUser} from '@/lib/session';
 
 const features = [
   {icon:'camera', title: '사진 글자 추출', description: '병원 안내문 사진에서 한글을 기기 안에서 읽고 직접 확인해요.'},
@@ -10,9 +11,10 @@ const features = [
   {icon:'expense', title: '비용 정산', description: '영수증과 가족별 분담 내역을 한곳에서 정리해요.'},
 ] satisfies Array<{icon:IconName,title:string,description:string}>;
 
-export default function Home() {
+export default async function Home() {
+  const user=await getAuthenticatedUser();
   return (
-    <Shell landing>
+    <Shell landing loggedIn={Boolean(user)}>
       <div className="page landing-page">
         <section className="hero hero-commercial">
           <div className="hero-copy">
@@ -23,8 +25,7 @@ export default function Home() {
               놓치지 않도록 보호자노트가 곁에서 정리합니다.
             </p>
             <div className="hero-actions">
-              <Link className="btn" href="/signup">무료로 시작하기</Link>
-              <Link className="btn secondary" href="/login">기존 계정 로그인</Link>
+              {user?<><Link className="btn" href="/dashboard">{user.name}님의 돌봄방 계속하기</Link><Link className="btn secondary" href="/settings">내 설정</Link></>:<><Link className="btn" href="/signup">무료로 시작하기</Link><Link className="btn secondary" href="/login">기존 계정 로그인</Link></>}
             </div>
             <ul className="trust-list" aria-label="보호자노트의 주요 원칙">
               <li>민감정보 개별 동의</li>
