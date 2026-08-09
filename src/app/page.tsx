@@ -19,16 +19,15 @@ export default async function Home() {
         <section className="hero hero-commercial">
           <div className="hero-copy">
             <span className="eyebrow">가족이 함께 쓰는 돌봄 노트</span>
-            <h1>보호는 함께,<br />기록은 간단하게.</h1>
+            <h1>가족 돌봄을 한곳에서,<br />놓치지 않게 기록하세요.</h1>
             <p>
-              병원 안내문부터 가족의 일정·교대·비용까지. 꼭 필요한 돌봄 정보를
-              놓치지 않도록 보호자노트가 곁에서 정리합니다.
+              일정, 생활 기록, 가족 교대까지 흩어진 돌봄 정보를 쉽고 안전하게 이어갑니다.
             </p>
             <div className="hero-actions">
-              {user?<><Link className="btn" href="/dashboard">{user.name}님의 돌봄방 계속하기</Link><Link className="btn secondary" href="/settings">내 설정</Link></>:<><Link className="btn" href="/signup">무료로 시작하기</Link><Link className="btn secondary" href="/login">기존 계정 로그인</Link></>}
+              {user?<><Link className="btn" href="/dashboard">{user.name}님의 돌봄방 계속하기</Link><Link className="landing-text-link" href="/settings">내 설정</Link></>:<><Link className="btn" href="/signup">무료로 보호자노트 시작</Link><Link className="landing-text-link" href="/comfort">가입 없이 마음쉼터 둘러보기</Link></>}
             </div>
             <ul className="trust-list" aria-label="보호자노트의 주요 원칙">
-              <li>민감정보 개별 동의</li>
+              <li>모든 핵심 기능 무료</li>
               <li>가족별 권한 관리</li>
               <li>사진은 기기 안에서 처리</li>
             </ul>
